@@ -1,0 +1,8 @@
+# Add any runtime dependencies for Nexamem here
+setuptools>=61.0
+pydantic>=2.0
+# sqlite3 is part of the Python standard library, no need to add
+fakeredis>=2.21.0
+build
+# Example:
+# numpy>=1.21.0

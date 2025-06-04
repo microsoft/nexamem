@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexamem"
+version = "0.1.0"
+description = "NexaMem - A Python package to store and manage chatbot conversation history."
+authors = [
+    { name="Chad Adams", email="chadadams@example.com" }
+]
+maintainers = [
+    { name="Chad Adams", email="chadadams@example.com" }
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pydantic>=2.0",
+    "fakeredis>=2.21.0"
+]
+keywords = ["chatbot", "history", "llm", "openai", "sqlite", "conversation", "memory", "file", "python"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/microsoft/nexamem"
+"Bug Tracker" = "https://github.com/microsoft/nexamem/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
