@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.1.0"
+version = "0.1.1"
 description = "NexaMem - A Python package to store and manage chatbot conversation history."
 authors = [
-    { name="Chad Adams", email="chadadams@example.com" }
+    { name="Chad Adams", email="chadada@microsoft.com" }
 ]
 maintainers = [
-    { name="Chad Adams", email="chadadams@example.com" }
+    { name="Chad Adams", email="chadada@microsoft.com" }
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
