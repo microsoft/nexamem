@@ -12,6 +12,18 @@ A simple Python package to store and manage AI memory. Designed for easy integra
 pip install nexamem
 ```
 
+### OR with GitHub
+
+```sh
+pip install git+https://github.com/microsoft/nexamem.git
+```
+
+### OR with GitHub branch?
+
+```sh
+pip install git+https://github.com/microsoft/nexamem.git@branch_or_tag_name
+```
+
 ## Usage
 
 Before using NexaMem, initialize the configuration with your preferred storage backend:
