@@ -19,12 +19,16 @@ pip install -i https://test.pypi.org/simple/ nexamem
 
 ```sh
 pip install git+https://github.com/microsoft/nexamem.git
+
+uv add git+https://github.com/microsoft/nexamem.git  
 ```
 
 ### OR with GitHub branch?
 
 ```sh
 pip install git+https://github.com/microsoft/nexamem.git@branch_or_tag_name
+
+uv add git+https://github.com/microsoft/nexamem.git@branch_or_tag_name
 ```
 
 ## Usage
