@@ -10,6 +10,9 @@ A simple Python package to store and manage AI memory. Designed for easy integra
 
 ```sh
 pip install nexamem
+
+(FOR TESTING)
+pip install -i https://test.pypi.org/simple/ nexamem
 ```
 
 ### OR with GitHub
