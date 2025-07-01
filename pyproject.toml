@@ -31,6 +31,17 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pyright",
+    "pytest>=7",
+    "pytest-asyncio",
+    "ipython",
+    "grandalf",
+    "pytest-cov"
+]
+
 [project.urls]
 "Homepage" = "https://github.com/microsoft/nexamem"
 "Bug Tracker" = "https://github.com/microsoft/nexamem/issues"
