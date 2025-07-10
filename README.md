@@ -1,9 +1,24 @@
-# NexaMem
+# NexaMem / AIMemory
 
-A simple Python package to store and manage AI memory. Designed for easy integration with Python projects.
+A Python library providing governed, Redis-backed conversational memory for AI components. Designed for easy integration with AI agents, orchestrators, and chatbot systems.
 
 ## Features
+
+### AIMemory API (Recommended) - v0.3
+- **Redis-backed channels** with user-defined configuration
+- **Sync and async client classes** for high-performance applications  
+- **YAML channel configuration** with TTL, encryption, and quota settings
+- **Policy enforcement** for TTL, PII detection, and quota management
+- **Scope-based access control** with environment isolation
+- **Dynamic channel registration** for runtime flexibility
+- **Checkpoint operations** for workflow state management
+- **Content processing chain** with PII detection/redaction
+- **Audit logging** to Redis Stream for compliance
+- **Base metrics capturing** for monitoring and observability
+
+### Legacy ChatHistory API
 - Store, retrieve, and manage chatbot conversation history
+- Multiple storage backends: Memory, File, SQLite, and Redis
 - Simple API for integration with LLM-based chatbots
 
 ## Installation
@@ -11,34 +26,119 @@ A simple Python package to store and manage AI memory. Designed for easy integra
 ```sh
 pip install nexamem
 
-(FOR TESTING)
+# Development/testing
 pip install -i https://test.pypi.org/simple/ nexamem
 ```
 
-### OR with GitHub
+### Or from GitHub
 
 ```sh
 pip install git+https://github.com/microsoft/nexamem.git
-
 uv add git+https://github.com/microsoft/nexamem.git  
 ```
 
-### OR with GitHub branch?
+## Quick Start - AIMemory (Recommended)
 
-```sh
-pip install git+https://github.com/microsoft/nexamem.git@branch_or_tag_name
+The new AIMemory API provides enterprise-grade conversational memory:
 
-uv add git+https://github.com/microsoft/nexamem.git@branch_or_tag_name
+```python
+from nexamem import AIMemory, MemoryScope
+
+# Initialize with Redis (or fakeredis for testing)
+memory = AIMemory(
+    redis_host="localhost",
+    redis_port=6379,
+    channels_yaml="channels.yaml",  # Optional: load channel config
+    use_fakeredis=True,  # For testing
+    enable_audit=True,
+    enable_metrics=True,
+    enable_content_processing=True
+)
+
+# Create a memory scope (defines access control)
+scope = MemoryScope(
+    agent_id="investment_agent",
+    user_id="user_12345",
+    session_id="session_abc123",
+    env="prod"  # Environment isolation
+)
+
+# Write to a channel
+message_uuid = memory.write(
+    scope=scope,
+    channel="working",
+    content="User asked about portfolio diversification",
+    auto_pii=True  # Auto-detect and handle PII
+)
+
+# Read from a channel
+messages, metadata = memory.read(
+    scope=scope,
+    channel="working",
+    max_msgs=10,
+    since_sec=3600  # Last hour only
+)
+
+print(f"Retrieved {len(messages)} messages")
 ```
 
-## Usage
+### Channel Configuration (channels.yaml)
 
-Before using NexaMem, initialize the configuration with your preferred storage backend:
+Define your channels with specific policies:
+
+```yaml
+channels:
+  working:          # Recent dialogue
+    ttl_sec: 14400  # 4 hours
+    encrypt: true
+    quota_bytes: 1000000  # 1MB daily quota
+
+  procedure:        # Workflow checkpoints  
+    ttl_sec: 604800 # 7 days
+    encrypt: true
+
+  routing:          # Breadcrumbs, classifier hints
+    ttl_sec: 86400  # 24 hours
+    encrypt: false
+```
+
+### Enhanced Features
+
+```python
+# Dynamic channel registration
+memory.register_channel(
+    name="debug_logs",
+    ttl_sec=3600,      # 1 hour
+    encrypt=False,
+    quota_bytes=500000  # 500KB
+)
+
+# Checkpoint operations for workflow state
+memory.checkpoint(scope, "workflow_state", {
+    "current_step": "risk_assessment",
+    "completed_steps": ["onboarding", "kyc"],
+    "progress": 0.6
+})
+
+# Atomic updates
+def advance_step(current_state):
+    return {"step": current_state["step"] + 1}
+
+updated = memory.checkpoint_atomic(scope, "counter", advance_step)
+
+# Metrics and audit
+metrics_data = memory.metrics.get_all_metrics()
+audit_records = memory.audit.get_audit_records(count=10)
+```
+
+## Legacy ChatHistory API
+
+The original simple API is still supported for backward compatibility:
 
 ```python
 from nexamem import initialize, get_config, ChatHistory
 
-# Example: In-memory storage (default)
+# Initialize with your preferred storage
 initialize({
     "history_storage": "memory",
     "debug": True  # Optional: enable debug output

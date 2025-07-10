@@ -1,8 +1,24 @@
-# Add any runtime dependencies for Nexamem here
+# Production dependencies for NexaMem/AIMemory v0.3
+# All essential dependencies included by default
+
+# Core dependencies
+pydantic>=2.0,<3.0
+redis[asyncio]>=5.0.0,<6.0
+fakeredis>=2.21.0,<3.0
+PyYAML>=6.0,<7.0
+
+# Azure integration (included by default)
+azure-identity>=1.15.0,<2.0
+azure-keyvault-secrets>=4.7.0,<5.0
+
+# Build system
 setuptools>=61.0
-pydantic>=2.0
-# sqlite3 is part of the Python standard library, no need to add
-fakeredis>=2.21.0
-build
-# Example:
-# numpy>=1.21.0
+build>=0.10.0
+
+# Development dependencies (optional - install with pip install nexamem[dev])
+# pytest>=7.0.0,<8.0
+# pytest-asyncio>=0.21.0,<1.0
+# pytest-cov>=4.0.0,<5.0
+# black>=23.0.0,<24.0
+# mypy>=1.0.0,<2.0
+# ruff>=0.1.0,<1.0
