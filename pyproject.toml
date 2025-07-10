@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.3.2"
+version = "0.3.3"
 description = "NexaMem - A Python package to store and manage chatbot conversation history."
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }

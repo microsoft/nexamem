@@ -33,19 +33,38 @@ def main():
             print(f"📜 Found {len(existing_messages)} existing messages in Redis")
             for i, msg in enumerate(existing_messages):
                 print(f"   {i+1}. [{msg['role']}]: {msg['content'][:50]}...")
+                print(f"       Chat ID: {msg['chat_id']}")
         else:
             print("📜 No existing messages found - starting fresh")
         
-        # Add new messages
-        print("\n💬 Adding new messages...")
-        history.add_message("user", "I'm testing local Redis with NexaMem")
-        history.add_message("assistant", "Great! Local Redis is perfect for development and testing.")
+        # Add new messages with metadata examples
+        print("\n💬 Adding new messages with metadata...")
+        import json
+        
+        # User message with session info
+        user_metadata = {"user_id": "dev_user_123", "session": "local_dev"}
+        history.add_message("user", "I'm testing local Redis with NexaMem", json.dumps(user_metadata))
+        
+        # Assistant message with response info
+        assistant_metadata = {"response_time": "fast", "environment": "development"}
+        history.add_message("assistant", "Great! Local Redis is perfect for development and testing.", json.dumps(assistant_metadata))
+        
+        # Messages without metadata (empty data field)
         history.add_message("user", "What are the advantages?")
         history.add_message("assistant", "Local Redis offers fast development cycles, easy debugging, and no cloud costs during development.")
         
-        # Show updated history
+        # Show updated history with enhanced structure
         all_messages = history.get_history()
         print(f"\n📋 Total messages now: {len(all_messages)}")
+        print(f"🔍 Enhanced Message Structure - each message has 4 fields:")
+        for i, msg in enumerate(all_messages[-2:]):  # Show last 2 messages
+            print(f"   Message {len(all_messages)-1+i}:")
+            print(f"     Role: {msg['role']}")
+            print(f"     Content: {msg['content'][:60]}...")
+            print(f"     Chat ID: {msg['chat_id']}")
+            print(f"     Data: {msg['data']}")
+        
+        print(f"\n✅ Chat ID for this session: {history.get_chat_id()}")
         
         # Demonstrate query functionality
         print("\n🔍 Searching for messages containing 'Redis'...")

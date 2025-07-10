@@ -38,6 +38,8 @@ class RedisAuthMethod(Enum):
 class Message(BaseModel):
     role: str
     content: str
+    chat_id: str
+    data: str = ""  # Optional JSON string for additional metadata
 
 class ChatHistory:
     """
@@ -50,10 +52,15 @@ class ChatHistory:
             raise ConfigError("NexaMem must be initialized before using ChatHistory.")
         self._storage = config["history_storage"]
         self._debug = config.get("debug", False)
+        self._chat_id = config.get("chat_id")
         self._history: List[Message] = []
         
         if self._storage == "file":
             self._file_path = config["file_path"]
+            # Append chat_id to filename to separate different chats
+            if self._chat_id:
+                base_path, ext = os.path.splitext(self._file_path)
+                self._file_path = f"{base_path}_{self._chat_id}{ext}"
             self._load_from_file()
         elif self._storage == "sqlite":
             self._sqlite_path = config["sqlite_path"]
@@ -66,10 +73,12 @@ class ChatHistory:
             self._load_from_redis()
             
         if self._debug:
-            print(f"[DEBUG] ChatHistory initialized with storage='{self._storage}'")
+            print(f"[DEBUG] ChatHistory initialized with storage='{self._storage}' and chat_id='{self._chat_id}'")
 
-    def add_message(self, role: str, content: str):
-        msg = Message(role=role, content=content)
+    def add_message(self, role: str, content: str, chat_id: str = None, data: str = ""):
+        if chat_id is None:
+            chat_id = self._chat_id
+        msg = Message(role=role, content=content, chat_id=chat_id, data=data)
         if self._storage == "memory":
             self._history.append(msg)
         elif self._storage == "file":
@@ -80,7 +89,8 @@ class ChatHistory:
         elif self._storage == "redis":
             self._save_to_redis(msg)
         if self._debug:
-            print(f"[DEBUG] Added message: role='{role}' content='{content}'")
+            data_info = f" data='{data}'" if data else ""
+            print(f"[DEBUG] Added message: role='{role}' content='{content}' chat_id='{chat_id}'{data_info}")
 
     def get_history(self) -> List[Dict[str, str]]:
         if self._storage == "sqlite":
@@ -123,12 +133,29 @@ class ChatHistory:
             print(f"[DEBUG] get_message_at called for index={index}.")
         return self._history[index].model_dump()
 
+    def get_chat_id(self) -> str:
+        """
+        Get the current chat ID.
+        
+        Returns:
+            str: The chat ID associated with this ChatHistory instance.
+        """
+        return self._chat_id
+
     # --- File storage helpers ---
     def _load_from_file(self):
         if os.path.exists(self._file_path):
             with open(self._file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                self._history = [Message(**msg) for msg in data]
+                # Handle backward compatibility - add chat_id and data if missing
+                messages = []
+                for msg_data in data:
+                    if "chat_id" not in msg_data:
+                        msg_data["chat_id"] = self._chat_id
+                    if "data" not in msg_data:
+                        msg_data["data"] = ""
+                    messages.append(Message(**msg_data))
+                self._history = messages
             if self._debug:
                 print(f"[DEBUG] Loaded {len(self._history)} messages from file '{self._file_path}'")
         else:
@@ -145,42 +172,64 @@ class ChatHistory:
     # --- SQLite storage helpers ---
     def _init_sqlite(self):
         self._conn = sqlite3.connect(self._sqlite_path)
+        # Create table with chat_id and data columns
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
                 role TEXT NOT NULL,
-                content TEXT NOT NULL
+                content TEXT NOT NULL,
+                data TEXT DEFAULT ''
             )
             """
         )
-        self._conn.commit()
-        if self._debug:
-            print(f"[DEBUG] Initialized SQLite database at '{self._sqlite_path}'")
-
-    def _save_to_sqlite(self, msg: Message):
+        # Add data column if it doesn't exist (for backward compatibility)
+        try:
+            self._conn.execute("ALTER TABLE chat_history ADD COLUMN data TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
+        # Create index on chat_id for better performance
         self._conn.execute(
-            "INSERT INTO chat_history (role, content) VALUES (?, ?)",
-            (msg.role, msg.content)
+            "CREATE INDEX IF NOT EXISTS idx_chat_id ON chat_history (chat_id)"
         )
         self._conn.commit()
         if self._debug:
-            print(f"[DEBUG] Saved message to SQLite: role='{msg.role}' content='{msg.content}'")
+            print(f"[DEBUG] Initialized SQLite database at '{self._sqlite_path}' for chat_id '{self._chat_id}'")
+
+    def _save_to_sqlite(self, msg: Message):
+        self._conn.execute(
+            "INSERT INTO chat_history (chat_id, role, content, data) VALUES (?, ?, ?, ?)",
+            (self._chat_id, msg.role, msg.content, msg.data)
+        )
+        self._conn.commit()
+        if self._debug:
+            data_info = f" data='{msg.data}'" if msg.data else ""
+            print(f"[DEBUG] Saved message to SQLite for chat_id '{self._chat_id}': role='{msg.role}' content='{msg.content}'{data_info}")
 
     def _load_from_sqlite(self):
         self._history = []
-        cursor = self._conn.execute("SELECT role, content FROM chat_history ORDER BY id ASC")
+        cursor = self._conn.execute(
+            "SELECT role, content, COALESCE(data, '') as data FROM chat_history WHERE chat_id = ? ORDER BY id ASC", 
+            (self._chat_id,)
+        )
         for row in cursor:
-            self._history.append(Message(role=row[0], content=row[1]))
+            self._history.append(Message(
+                role=row[0], 
+                content=row[1], 
+                chat_id=self._chat_id, 
+                data=row[2]
+            ))
         if self._debug:
-            print(f"[DEBUG] Loaded {len(self._history)} messages from SQLite database.")
+            print(f"[DEBUG] Loaded {len(self._history)} messages from SQLite for chat_id '{self._chat_id}'.")
 
     def _clear_sqlite(self):
-        self._conn.execute("DELETE FROM chat_history")
+        self._conn.execute("DELETE FROM chat_history WHERE chat_id = ?", (self._chat_id,))
         self._conn.commit()
         self._history = []
         if self._debug:
-            print("[DEBUG] Cleared SQLite chat history table.")
+            print(f"[DEBUG] Cleared SQLite chat history for chat_id '{self._chat_id}'.")
 
     def query_sqlite(self, where: str = "", params: tuple = ()) -> list:
         """
@@ -196,12 +245,18 @@ class ChatHistory:
         """
         if self._storage != "sqlite":
             raise ConfigError("query_sqlite is only available when using SQLite storage.")
-        query = "SELECT role, content FROM chat_history"
+        query = ("SELECT role, content, COALESCE(data, '') as data "
+                 "FROM chat_history WHERE chat_id = ?")
+        params = list(params) if params else []
+        params.insert(0, self._chat_id)  # Add chat_id as first parameter
         if where:
-            query += f" WHERE {where}"
+            query += f" AND ({where})"
         query += " ORDER BY id ASC"
         cursor = self._conn.execute(query, params)
-        results = [dict(role=row[0], content=row[1]) for row in cursor]
+        results = [
+            {"role": row[0], "content": row[1], "chat_id": self._chat_id, "data": row[2]} 
+            for row in cursor
+        ]
         if self._debug:
             print(f"[DEBUG] query_sqlite returned {len(results)} messages with where='{where}' and params={params}")
         return results
@@ -254,7 +309,7 @@ class ChatHistory:
                 self._auth_method = "access_key"
             
             self._redis_key_prefix = config.get("redis_key_prefix", "nexamem:")
-            self._redis_history_key = f"{self._redis_key_prefix}history"
+            self._redis_history_key = f"{self._redis_key_prefix}history:{self._chat_id}"
             
             # Test connection
             self._redis_client.ping()
@@ -298,7 +353,12 @@ class ChatHistory:
             self._history = []
             messages = self._redis_client.lrange(self._redis_history_key, 0, -1)
             for msg_json in messages:
-                msg_data = json.loads(msg_json.decode('utf-8'))
+                msg_data = json.loads(msg_json.decode("utf-8"))
+                # Add chat_id and data if missing (backward compatibility)
+                if "chat_id" not in msg_data:
+                    msg_data["chat_id"] = self._chat_id
+                if "data" not in msg_data:
+                    msg_data["data"] = ""
                 self._history.append(Message(**msg_data))
             if self._debug:
                 print(f"[DEBUG] Loaded {len(self._history)} messages from Redis.")

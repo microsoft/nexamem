@@ -51,7 +51,13 @@ class TestEnumConfiguration:
         history = ChatHistory()
         history.add_message("user", "Enum test")
         assert len(history.get_history()) == 1
-        assert file_path.exists()
+        
+        # File storage now includes chat_id in filename
+        # Check for any JSON file in the directory (it will have chat_id appended)
+        json_files = list(tmp_path.glob("*.json"))
+        assert len(json_files) == 1
+        assert json_files[0].name.startswith("test_enum_")
+        assert json_files[0].name.endswith(".json")
     
     def test_sqlite_storage_with_enum(self, tmp_path):
         """Test SQLite storage configuration using enum."""

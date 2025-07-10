@@ -43,20 +43,23 @@ from nexamem import initialize, get_config, ChatHistory
 # Example: In-memory storage (default)
 initialize({
     "history_storage": "memory",
+    "chat_id": "my-chat-session",  # Optional: specify chat ID
     "debug": True  # Optional: enable debug output
 })
 
-# Example: File-based storage
+# Example: File-based storage with auto-generated chat ID
 initialize({
     "history_storage": "file",
     "file_path": "./chat_history.json",
+    # chat_id will be auto-generated if not provided
     "debug": False
 })
 
-# Example: SQLite storage
+# Example: SQLite storage with specific chat ID
 initialize({
     "history_storage": "sqlite",
     "sqlite_path": "./chat_history.db",
+    "chat_id": "session-abc123",  # Optional: custom chat ID
     "debug": False
 })
 
@@ -68,6 +71,7 @@ initialize({
     "redis_ssl": False,
     "redis_db": 0,
     "redis_key_prefix": "nexamem:",
+    "chat_id": "user-456-session",  # Optional: specify chat ID
     "debug": False
 })
 
@@ -97,6 +101,7 @@ initialize({
 print(get_config())  # View current configuration
 
 history = ChatHistory()
+print(f"Chat ID: {history.get_chat_id()}")  # Get the current chat ID
 history.add_message('user', 'Hello!')
 history.add_message('bot', 'Hi! How can I help you?')
 print(history.get_history())
@@ -106,6 +111,7 @@ print(history.get_history())
 
 #### Storage Backend Options
 - `history_storage` (str, required): Storage backend. One of `'memory'`, `'file'`, `'sqlite'`, or `'redis'`.
+- `chat_id` (str, optional): Unique identifier for this chat session. Auto-generated UUID if not provided.
 
 #### File Storage Options
 - `file_path` (str, required if `history_storage='file'`): Path to the JSON file for storing history.
@@ -126,11 +132,36 @@ print(history.get_history())
 #### General Options
 - `debug` (bool, optional): Enable debug output (default: `False`).
 
+### Chat ID Management
+
+Each chat session is identified by a unique `chat_id`. This allows you to manage multiple separate conversations:
+
+- **Auto-generation**: If no `chat_id` is provided, a UUID4 is automatically generated
+- **Manual specification**: Provide a custom `chat_id` string for predictable session management
+- **Storage separation**: Different storage backends handle chat separation as follows:
+  - **Memory**: Each ChatHistory instance maintains its own in-memory data
+  - **File**: Chat ID is appended to the filename (e.g., `chat_history_abc123.json`)
+  - **SQLite**: Chat messages are stored with a `chat_id` column for separation
+  - **Redis**: Chat ID is included in the Redis key structure (`nexamem:history:chat_id`)
+
+```python
+# Example: Managing multiple chats
+initialize({"history_storage": "sqlite", "sqlite_path": "./chats.db", "chat_id": "customer-support-001"})
+support_chat = ChatHistory()
+
+initialize({"history_storage": "sqlite", "sqlite_path": "./chats.db", "chat_id": "customer-support-002"})  
+another_chat = ChatHistory()
+
+print(f"Support chat ID: {support_chat.get_chat_id()}")  # customer-support-001
+print(f"Another chat ID: {another_chat.get_chat_id()}")   # customer-support-002
+```
+
 ### API Methods
 
 #### Core Methods
 - `initialize(config: dict)`: Initialize the library with configuration.
 - `get_config() -> dict`: Get the current configuration.
+- `ChatHistory.get_chat_id() -> str`: Get the current chat ID.
 - `ChatHistory.add_message(role: str, content: str)`: Add a message to the history.
 - `ChatHistory.get_history() -> list`: Retrieve the conversation history.
 - `ChatHistory.clear()`: Clear the conversation history.

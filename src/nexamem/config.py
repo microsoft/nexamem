@@ -3,6 +3,7 @@ Configuration management for NexaMem library.
 """
 from typing import Any, Dict, Optional
 from enum import Enum
+import uuid
 
 class ConfigError(Exception):
     """Custom exception for configuration errors."""
@@ -18,6 +19,7 @@ def initialize(config: Dict[str, Any]) -> None:
     Args:
         config (Dict[str, Any]): Configuration dictionary. Must include:
             - 'history_storage' (str or StorageType): 'memory', 'file', 'sqlite', or 'redis'.
+            - 'chat_id' (str, optional): Unique identifier for this chat session. Auto-generated if not provided.
             - 'file_path' (str, optional): Required if 'history_storage' is 'file'.
             - 'sqlite_path' (str, optional): Required if 'history_storage' is 'sqlite'.
             - 'redis_host' (str, optional): Redis host. Required for 'redis' storage.
@@ -48,6 +50,16 @@ def initialize(config: Dict[str, Any]) -> None:
     if hasattr(auth_method, 'value'):  # It's an enum
         auth_method = auth_method.value
         normalized_config['redis_auth_method'] = auth_method
+    
+    # Generate chat_id if not provided
+    if 'chat_id' not in normalized_config or not normalized_config['chat_id']:
+        chat_id = str(uuid.uuid4())
+        normalized_config['chat_id'] = chat_id
+        if normalized_config.get('debug', False):
+            print(f"[DEBUG] Auto-generated chat_id: {chat_id}")
+    else:
+        if normalized_config.get('debug', False):
+            print(f"[DEBUG] Using provided chat_id: {normalized_config['chat_id']}")
     
     if storage not in ('memory', 'file', 'sqlite', 'redis'):
         raise ConfigError("'history_storage' must be 'memory', 'file', 'sqlite', or 'redis'.")

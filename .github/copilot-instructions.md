@@ -34,6 +34,12 @@
    - Comprehensive error handling
    - Debug mode with detailed logging
 
+5. **Enhanced Message Structure**:
+   - Auto-generated chat_id for conversation grouping
+   - Optional data field for JSON metadata storage
+   - Multi-chat support for complex applications
+   - Analytics and session management capabilities
+
 ## 📋 Technical Specifications
 
 ### Dependencies:
@@ -89,6 +95,8 @@ class RedisAuthMethod(Enum):
 class Message(BaseModel):
     role: str
     content: str
+    chat_id: str
+    data: str = ""  # Optional JSON string for metadata
 
 class ChatHistory:
     # Implement all storage backends here
@@ -113,6 +121,14 @@ class ChatHistory:
 - Mock Azure authentication for testing
 - Performance tests for large message sets
 - Error handling and edge case coverage
+
+### 5. Enhanced Message Structure Implementation:
+- **chat_id field**: Auto-generated UUID or custom string for conversation grouping
+- **data field**: JSON string for storing metadata (timestamps, analytics, user info)
+- **API enhancement**: `add_message(role, content, chat_id=None, data="")`
+- **Storage compatibility**: All backends (memory, file, SQLite, Redis) support new fields
+- **Backward compatibility**: Existing code continues to work without changes
+- **Migration logic**: Automatic addition of missing fields for legacy data
 
 ## 📚 Modern Python Package Best Practices
 
@@ -153,12 +169,16 @@ test = ["pytest>=8.0.0", "pytest-cov>=4.0.0"]
 - FakeRedis demo that works without setup
 - Azure configuration examples
 - Type-safe enum demonstrations
+- Enhanced message structure with chat_id and data fields
+- Type-safe enum demonstrations
 
 ### 2. Example Scripts:
 - Basic usage examples
 - Azure Redis configuration
 - Entra ID authentication setup
 - Performance benchmarks
+- Multi-chat conversation management
+- Metadata analytics and data extraction
 
 ### 3. Documentation:
 - README.md with quick start
@@ -178,6 +198,10 @@ test = ["pytest>=8.0.0", "pytest-cov>=4.0.0"]
 ### Key AI Prompts for Recreation:
 - "Create a ChatHistory class with [storage_type] support"
 - "Add Redis authentication with Azure Entra ID"
+- "Implement enhanced message structure with chat_id and data fields"
+- "Add multi-chat support with conversation grouping"
+- "Create analytics extraction from message metadata"
+- "Update storage backends to support enhanced message structure"
 - "Generate comprehensive tests for [feature]"
 - "Create example scripts showing [functionality]"
 - "Update documentation for [new_feature]"
@@ -190,6 +214,10 @@ test = ["pytest>=8.0.0", "pytest-cov>=4.0.0"]
 - [ ] Examples run without errors
 - [ ] Package builds and installs correctly
 - [ ] UV support works seamlessly
+- [ ] Enhanced message structure (chat_id, data) works across all backends
+- [ ] Multi-chat support enables conversation grouping
+- [ ] Metadata analytics work with data field
+- [ ] Backward compatibility maintained for existing code
 
 ## 🎯 Success Metrics
 - **Development Speed**: Complete package in <4 hours
@@ -199,3 +227,88 @@ test = ["pytest>=8.0.0", "pytest-cov>=4.0.0"]
 - **Modern Tooling**: UV, type hints, enums
 
 This blueprint enables rapid recreation of NexaMem using AI-assisted hyper velocity engineering techniques!
+
+## 🎯 Enhanced Message Structure Usage Examples
+
+### Basic Enhanced Usage:
+```python
+from nexamem import ChatHistory, initialize, StorageType
+
+# Initialize with any storage backend
+initialize({"history_storage": StorageType.MEMORY})
+history = ChatHistory()
+
+# Basic usage (auto-generated chat_id)
+history.add_message(
+    role="user", 
+    content="Hello!",
+    data='{"timestamp": "2025-01-10T10:00:00Z", "user_id": "123"}'
+)
+
+# Custom chat_id for conversation grouping
+history.add_message(
+    role="assistant", 
+    content="Hi there!",
+    chat_id="support_chat_001", 
+    data='{"agent_id": "agent_007", "response_time": 150}'
+)
+```
+
+### Multi-Chat Applications:
+```python
+# Support chat
+history.add_message("user", "Help with billing", 
+                   chat_id="support_001", 
+                   data='{"priority": "high", "category": "billing"}')
+
+# Sales chat  
+history.add_message("user", "Tell me about products", 
+                   chat_id="sales_002",
+                   data='{"lead_source": "website", "interest": "high"}')
+
+# Group messages by chat_id
+messages = history.get_history()
+chat_groups = {}
+for msg in messages:
+    chat_id = msg.get('chat_id', 'unknown')
+    if chat_id not in chat_groups:
+        chat_groups[chat_id] = []
+    chat_groups[chat_id].append(msg)
+```
+
+### Analytics & Monitoring:
+```python
+# Store model performance data
+history.add_message("assistant", "Here's the answer", 
+                   data='{"model": "gpt-4", "tokens": 45, "confidence": 0.95}')
+
+# Extract analytics from data fields
+import json
+total_tokens = 0
+models_used = {}
+
+for msg in history.get_history():
+    if msg.get('data'):
+        try:
+            data = json.loads(msg['data'])
+            if 'tokens' in data:
+                total_tokens += data['tokens']
+            if 'model' in data:
+                model = data['model']
+                models_used[model] = models_used.get(model, 0) + 1
+        except json.JSONDecodeError:
+            pass
+
+print(f"Total tokens: {total_tokens}")
+print(f"Models used: {models_used}")
+```
+
+### Message Structure:
+```json
+{
+    "role": "user",
+    "content": "Hello!",
+    "chat_id": "auto_generated_or_custom_id", 
+    "data": "{\"timestamp\": \"2025-01-10T10:00:00Z\", \"user_id\": \"123\"}"
+}
+```

@@ -6,16 +6,22 @@ def test_add_and_get_history():
     history = ChatHistory()
     history.add_message('user', 'Hello!')
     history.add_message('bot', 'Hi!')
-    assert history.get_history() == [
-        {'role': 'user', 'content': 'Hello!'},
-        {'role': 'bot', 'content': 'Hi!'}
-    ]
+    messages = history.get_history()
+    assert len(messages) == 2
+    assert messages[0]['role'] == 'user'
+    assert messages[0]['content'] == 'Hello!'
+    assert 'chat_id' in messages[0]
+    assert 'data' in messages[0]
+    assert messages[1]['role'] == 'bot'
+    assert messages[1]['content'] == 'Hi!'
+    assert 'chat_id' in messages[1]
+    assert 'data' in messages[1]
 
 def test_clear_history():
     history = ChatHistory()
     history.add_message('user', 'Hello!')
     history.clear()
-    assert history.get_history() == []
+    assert len(history.get_history()) == 0
 
 def test_add_and_get_history_debug(capsys):
     initialize({"history_storage": "memory", "debug": True})
@@ -24,10 +30,16 @@ def test_add_and_get_history_debug(capsys):
     history.add_message('bot', 'Hi!')
     out = capsys.readouterr().out
     assert "[DEBUG]" in out
-    assert history.get_history() == [
-        {'role': 'user', 'content': 'Hello!'},
-        {'role': 'bot', 'content': 'Hi!'}
-    ]
+    messages = history.get_history()
+    assert len(messages) == 2
+    assert messages[0]['role'] == 'user'
+    assert messages[0]['content'] == 'Hello!'
+    assert 'chat_id' in messages[0]
+    assert 'data' in messages[0]
+    assert messages[1]['role'] == 'bot'
+    assert messages[1]['content'] == 'Hi!'
+    assert 'chat_id' in messages[1]
+    assert 'data' in messages[1]
 
 def test_clear_history_debug(capsys):
     initialize({"history_storage": "memory", "debug": True})
@@ -45,7 +57,10 @@ def test_file_storage_debug(tmp_path, capsys):
     history.add_message('user', 'File test')
     out = capsys.readouterr().out
     assert "[DEBUG] Saved" in out or "[DEBUG] Loaded" in out
-    assert os.path.exists(file_path)
+    # File storage now includes chat_id in filename
+    # Check for any JSON file in the directory
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 1
     assert history.get_history()[0]['content'] == 'File test'
     history.clear()
     assert history.get_history() == []
@@ -59,9 +74,9 @@ def test_sqlite_storage_debug(tmp_path, capsys):
     assert "[DEBUG] Saved message to SQLite" in out
     assert history.get_history()[0]['content'] == 'SQLite test'
     history.clear()
-    assert history.get_history() == []
+    assert len(history.get_history()) == 0
     out = capsys.readouterr().out
-    assert "[DEBUG] Cleared SQLite chat history table." in out
+    assert "[DEBUG] Cleared SQLite chat history for chat_id" in out
 
 def test_query_sqlite_debug(tmp_path, capsys):
     sqlite_path = tmp_path / "chat.db"
@@ -80,8 +95,16 @@ def test_get_message_at_memory():
     history = ChatHistory()
     history.add_message('user', 'First')
     history.add_message('bot', 'Second')
-    assert history.get_message_at(0) == {'role': 'user', 'content': 'First'}
-    assert history.get_message_at(1) == {'role': 'bot', 'content': 'Second'}
+    msg0 = history.get_message_at(0)
+    msg1 = history.get_message_at(1)
+    assert msg0['role'] == 'user'
+    assert msg0['content'] == 'First'
+    assert 'chat_id' in msg0
+    assert 'data' in msg0
+    assert msg1['role'] == 'bot'
+    assert msg1['content'] == 'Second'
+    assert 'chat_id' in msg1
+    assert 'data' in msg1
     with pytest.raises(IndexError):
         history.get_message_at(2)
 
@@ -91,8 +114,16 @@ def test_get_message_at_file(tmp_path):
     history = ChatHistory()
     history.add_message('user', 'File1')
     history.add_message('bot', 'File2')
-    assert history.get_message_at(0) == {'role': 'user', 'content': 'File1'}
-    assert history.get_message_at(1) == {'role': 'bot', 'content': 'File2'}
+    msg0 = history.get_message_at(0)
+    msg1 = history.get_message_at(1)
+    assert msg0['role'] == 'user'
+    assert msg0['content'] == 'File1'
+    assert 'chat_id' in msg0
+    assert 'data' in msg0
+    assert msg1['role'] == 'bot'
+    assert msg1['content'] == 'File2'
+    assert 'chat_id' in msg1
+    assert 'data' in msg1
     with pytest.raises(IndexError):
         history.get_message_at(2)
 
@@ -102,7 +133,15 @@ def test_get_message_at_sqlite(tmp_path):
     history = ChatHistory()
     history.add_message('user', 'SQL1')
     history.add_message('bot', 'SQL2')
-    assert history.get_message_at(0) == {'role': 'user', 'content': 'SQL1'}
-    assert history.get_message_at(1) == {'role': 'bot', 'content': 'SQL2'}
+    msg0 = history.get_message_at(0)
+    msg1 = history.get_message_at(1)
+    assert msg0['role'] == 'user'
+    assert msg0['content'] == 'SQL1'
+    assert 'chat_id' in msg0
+    assert 'data' in msg0
+    assert msg1['role'] == 'bot'
+    assert msg1['content'] == 'SQL2'
+    assert 'chat_id' in msg1
+    assert 'data' in msg1
     with pytest.raises(IndexError):
         history.get_message_at(2)

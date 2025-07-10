@@ -63,17 +63,32 @@ def main():
         messages = history.get_history()
         for i, msg in enumerate(messages):
             print(f"   {i+1}. [{msg['role']}]: {msg['content']}")
+            print(f"       Chat ID: {msg['chat_id']}")
+            print(f"       Data: {msg['data']}")
         
-        # Demo: Query functionality
-        print("\n🔍 Searching for messages containing 'Azure'...")
-        azure_messages = history.query_redis(pattern="Azure")
-        for msg in azure_messages:
-            print(f"   [{msg['role']}]: {msg['content']}")
+        # Demonstrate enhanced message structure
+        print(f"\n🔍 Enhanced Message Structure:")
+        print(f"   Every message includes 4 fields: role, content, chat_id, data")
+        print(f"   Chat ID: {history.get_chat_id()}")
         
-        # Demo: Get specific message
-        print(f"\n📋 First message: {history.get_message_at(0)}")
+        # Example of adding a message with metadata
+        print(f"\n📊 Adding message with metadata...")
+        import json
+        metadata = {
+            "timestamp": "2025-01-10T15:30:00Z",
+            "user_location": "dashboard",
+            "session_type": "premium_support"
+        }
+        history.add_message("user", "Can you help me optimize my Redis performance?", json.dumps(metadata))
         
-        print(f"\n✅ Successfully stored {len(messages)} messages in Azure Redis Cache!")
+        # Show the enhanced message
+        latest_msg = history.get_message_at(-1)  # Get last message
+        print(f"   Role: {latest_msg['role']}")
+        print(f"   Content: {latest_msg['content']}")
+        print(f"   Chat ID: {latest_msg['chat_id']}")
+        print(f"   Metadata: {json.loads(latest_msg['data'])}")
+        
+        print(f"\n✅ Successfully stored {len(history.get_history())} messages in Azure Redis Cache!")
         print("💡 Messages will persist across application restarts.")
         
         # Uncomment to clear history

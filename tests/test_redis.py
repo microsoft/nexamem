@@ -83,8 +83,16 @@ def test_redis_basic_operations(mock_redis_config, monkeypatch):
     assert messages[1]['content'] == 'Hi from Redis!'
     
     # Test get_message_at
-    assert history.get_message_at(0) == {'role': 'user', 'content': 'Hello Redis!'}
-    assert history.get_message_at(1) == {'role': 'bot', 'content': 'Hi from Redis!'}
+    msg0 = history.get_message_at(0)
+    msg1 = history.get_message_at(1)
+    assert msg0['role'] == 'user'
+    assert msg0['content'] == 'Hello Redis!'
+    assert 'chat_id' in msg0
+    assert 'data' in msg0
+    assert msg1['role'] == 'bot'
+    assert msg1['content'] == 'Hi from Redis!'
+    assert 'chat_id' in msg1
+    assert 'data' in msg1
     
     # Test clear
     history.clear()
