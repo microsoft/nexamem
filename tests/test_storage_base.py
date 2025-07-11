@@ -90,13 +90,21 @@ class MockStorage(BaseStorage):
                 )
         return results
 
-    def get_statistics(self):
+    def get_stats(self):
         scopes = {v.get("scope") for v in self.data.values() if v.get("scope")}
         return {
             "total_memories": len(self.data),
             "total_scopes": len(scopes),
             "audit_entries": len(self.audit_log),
         }
+
+    def get_audit_log(self, memory_id=None, limit=None):
+        logs = self.audit_log
+        if memory_id:
+            logs = [log for log in logs if log[1] == memory_id]
+        if limit:
+            logs = logs[-limit:]
+        return [{"action": log[0], "memory_id": log[1]} for log in logs]
 
     def clear_scope(self, scope):
         keys_to_delete = [k for k, v in self.data.items() if v.get("scope") == scope]
@@ -129,7 +137,7 @@ def test_mock_storage_implementation():
     assert results[0]["memory_id"] == "test1"
 
     # Test statistics
-    stats = storage.get_statistics()
+    stats = storage.get_stats()
     assert stats["total_memories"] == 1
     assert stats["total_scopes"] == 1
 
