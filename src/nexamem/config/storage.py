@@ -6,7 +6,7 @@ import os
 from enum import Enum
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class StorageType(str, Enum):
@@ -58,16 +58,19 @@ class AzureRedisConfig(BaseModel):
     use_collections: bool = Field(default=True, description="Use Redis collections instead of individual keys")
     collection_prefix: str = Field(default="nexamem", description="Prefix for collection names")
     
-    @validator('hostname')
+    @field_validator('hostname')
+    @classmethod
     def validate_azure_hostname(cls, v):
         """Validate that hostname is an Azure Redis hostname."""
         if not v.endswith('.redis.cache.windows.net'):
             raise ValueError('Azure Redis hostname must end with .redis.cache.windows.net')
         return v
     
-    @validator('auth_method')
-    def validate_auth_config(cls, v, values):
+    @field_validator('auth_method')
+    @classmethod
+    def validate_auth_config(cls, v, info):
         """Validate that required auth fields are provided."""
+        values = info.data if info else {}
         if v == AzureAuthMethod.ACCESS_KEY and not values.get('access_key'):
             raise ValueError('access_key required when using access_key auth')
         elif v == AzureAuthMethod.ENTRA_ID and not values.get('use_entra_id'):
