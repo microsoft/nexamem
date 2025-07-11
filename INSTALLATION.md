@@ -71,7 +71,7 @@ import nexamem
 print(f"✅ NexaMem {nexamem.__version__} installed successfully!")
 
 # Test basic functionality
-from nexamem import ChatHistory, MemoryScope, AIMemory
+from nexamem import AIMemory, MemoryScope, AIMemoryConfig, StorageConfig
 print("🎯 Core components available!")
 ```
 

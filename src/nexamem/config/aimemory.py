@@ -34,7 +34,13 @@ class AIMemoryConfig(BaseModel):
     @classmethod
     def from_env(cls) -> "AIMemoryConfig":
         """Create AIMemory configuration from environment variables."""
+        import os
         return cls(
+            default_scope=os.getenv('NEXAMEM_DEFAULT_SCOPE', 'default'),
             storage=StorageConfig.from_env(),
-            # Other config from env vars if needed
+            channels_yaml=os.getenv('NEXAMEM_CHANNELS_YAML'),
+            strict_yaml_validation=os.getenv('NEXAMEM_STRICT_YAML_VALIDATION', 'true').lower() == 'true',
+            enable_audit=os.getenv('NEXAMEM_ENABLE_AUDIT', 'true').lower() == 'true',
+            enable_metrics=os.getenv('NEXAMEM_ENABLE_METRICS', 'true').lower() == 'true',
+            enable_content_processing=os.getenv('NEXAMEM_ENABLE_CONTENT_PROCESSING', 'false').lower() == 'true',
         )

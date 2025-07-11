@@ -10,9 +10,9 @@ A Python library providing governed, Redis-backed conversational memory for AI c
 ## 📖 Quick Navigation
 
 **New to NexaMem?** → [Quick Start - AIMemory](#quick-start---aimemory-recommended)  
-**Want Azure Redis?** → [Azure Redis Ready](#-azure-redis-ready) | [Quick Start with Azure Redis](#quick-start-with-azure-redis)  
-**Using Legacy API?** → [Legacy ChatHistory API](#legacy-chathistory-api)  
-**Need Azure Redis docs?** → [Azure Redis Integration Guide](AZURE_REDIS.md)  
+**Want Azure Redis?** → [Azure Redis Ready](#-azure-redis-ready) | [Production Configuration](#production-with-azure-redis)  
+**YAML Channels?** → [Channel Configuration](#channel-configuration-channelsyaml) | [Schema Validation](#-yaml-schema-validation)  
+**Need Help?** → [Azure Redis Integration Guide](AZURE_REDIS.md) | [Migration Guide](LEGACY_API.md)  
 **Testing & Development?** → [Testing & Development](#-testing--development)
 
 ## Features
@@ -28,16 +28,7 @@ A Python library providing governed, Redis-backed conversational memory for AI c
 - **Content processing chain** with PII detection/redaction
 - **Audit logging** to Redis Stream for compliance
 - **Base metrics capturing** for monitoring and observability
-
-### Legacy ChatHistory API
-- Store, retrieve, and manage chatbot conversation history
-- **Enhanced message properties** aligned with AIMemory requirements
-- Support for agent tracking, session management, token counting, and custom metadata
-- Multiple storage backends: Memory, File, SQLite, **Redis (including Azure Cache for Redis)**
-- **🚀 Azure Redis integration** with access key and Entra ID authentication
-- Advanced SQLite and Redis querying capabilities with pattern matching
-- Session context management and convenience methods
-- Full backward compatibility with existing code
+- **Azure Redis integration** with enterprise security and performance
 
 ## Installation
 
@@ -69,18 +60,19 @@ NexaMem includes **first-class support for Azure Cache for Redis** with enterpri
 
 ## Quick Start - AIMemory (Recommended)
 
-The new AIMemory API provides enterprise-grade conversational memory with Redis backing:
+The new AIMemory API provides enterprise-grade conversational memory with Redis backing and full YAML channel configuration support:
 
 ```python
-from nexamem import AIMemory, MemoryScope
+from nexamem import AIMemory, AIMemoryConfig, StorageConfig, MemoryScope
 
-# Initialize with Redis (or fakeredis for testing)
-memory = AIMemory(
-    redis_host="localhost",
-    redis_port=6379,
-    channels_yaml="channels.yaml",  # Optional: load channel config
-    use_fakeredis=True  # For testing
+# Initialize with in-memory storage for testing (or Redis for production)
+config = AIMemoryConfig(
+    default_scope="test_session",
+    storage=StorageConfig.memory(),  # For testing, use Redis for production
+    channels_yaml="channels.yaml",  # Optional: YAML channel configuration
+    strict_yaml_validation=True     # Optional: Enable strict YAML validation
 )
+memory = AIMemory(config)
 
 # Create a memory scope (defines access control)
 scope = MemoryScope(
@@ -116,6 +108,47 @@ try:
     print("✅ Channel configuration is valid!")
 except Exception as e:
     print(f"❌ Configuration error: {e}")
+```
+
+### Production with Azure Redis
+
+For production applications, use Azure Cache for Redis with the new AIMemory API:
+
+```python
+from nexamem import AIMemory, AIMemoryConfig, StorageConfig
+
+# Production configuration with Azure Redis
+config = AIMemoryConfig(
+    default_scope="production_session",
+    storage=StorageConfig.azure_redis(
+        hostname="your-cache.redis.cache.windows.net",
+        access_key="your_primary_access_key",
+        port=6380,
+        ssl=True
+    ),
+    channels_yaml="channels.yaml",
+    strict_yaml_validation=True
+)
+
+memory = AIMemory(config)
+
+# Use the same write/read operations as before
+scope = MemoryScope(
+    agent_id="prod_agent",
+    user_id="customer_12345",
+    session_id="session_abc123",
+    env="prod"
+)
+
+message_uuid = memory.write(
+    scope=scope,
+    channel="working",
+    content="Production message with Azure Redis backing",
+    auto_pii=True
+)
+
+messages, metadata = memory.read(scope=scope, channel="working")
+print(f"Retrieved {len(messages)} messages from Azure Redis")
 ```
 
 > **💡 Pro Tip**: AIMemory includes strict YAML schema validation by default to catch configuration errors early. See the [Schema Validation](#-yaml-schema-validation) section for details.
@@ -364,13 +397,16 @@ For high-throughput applications:
 
 ```python
 import asyncio
-from nexamem import AsyncAIMemory
+from nexamem import AsyncAIMemory, AIMemoryConfig, StorageConfig
 
 async def main():
-    async_memory = AsyncAIMemory(
-        redis_host="localhost",
-        redis_port=6379
+    config = AIMemoryConfig(
+        default_scope="async_session",
+        storage=StorageConfig.memory(),  # For testing, use Redis for production
+        channels_yaml="channels.yaml"   # Optional: YAML channel configuration
     )
+    
+    async_memory = AsyncAIMemory(config)
     
     scope = MemoryScope(
         agent_id="async_agent",
@@ -394,110 +430,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## Legacy ChatHistory API
-
-The original simple API is still supported for backward compatibility and now includes enhanced message properties aligned with AIMemory requirements:
-
-### Enhanced Message Properties
-
-All messages now support these additional properties:
-
-- **`agent_id`** - String identifier for the agent (default: empty string)
-- **`user_id`** - String identifier for the user (default: empty string)  
-- **`session_id`** - Auto-generated UUID for the session (automatically created if not provided)
-- **`env`** - Environment identifier (default: "prod")
-- **`timestamp`** - ISO datetime string of when the message was recorded (auto-generated)
-- **`tokens`** - Number of tokens used by the LLM (default: 0)
-- **`data`** - JSON string for additional custom data (default: empty string)
-
-### Basic Usage
-
-```python
-from nexamem import initialize, ChatHistory
-
-# Initialize with your preferred storage
-initialize({
-    "history_storage": "memory",  # or "file", "sqlite"
-    "debug": True
-})
-
-history = ChatHistory()
-
-# Simple usage (backward compatible)
-history.add_message('user', 'Hello!')
-history.add_message('assistant', 'Hi! How can I help you?')
-
-# Enhanced usage with new properties
-history.add_message(
-    'assistant', 
-    'Your portfolio is performing well.',
-    agent_id="portfolio_agent",
-    user_id="customer_123",
-    tokens=15,
-    data='{"confidence": 0.92, "risk_level": "moderate"}'
-)
-
-# View all messages with enhanced properties
-messages = history.get_history()
-for msg in messages:
-    print(f"Role: {msg['role']}")
-    print(f"Content: {msg['content']}")
-    print(f"Agent: {msg['agent_id']}")
-    print(f"Tokens: {msg['tokens']}")
-    print(f"Timestamp: {msg['timestamp']}")
-```
-
-### Quick Start with Azure Redis
-
-For production applications, Azure Cache for Redis provides enterprise-grade performance and security:
-
-```python
-from nexamem import initialize, ChatHistory
-
-# Azure Redis with access key (simplest setup)
-initialize({
-    "history_storage": "redis",
-    "redis_config": {
-        "azure_hostname": "your-cache.redis.cache.windows.net",
-        "azure_access_key": "your_primary_access_key",
-        "ssl": True
-    }
-})
-
-history = ChatHistory()
-
-# Set session context for organized conversation tracking
-history.set_session_context(
-    agent_id="customer_support",
-    user_id="customer_12345",
-    env="prod"
-)
-
-# Add messages with automatic token counting and metadata
-history.add_user_message("I need help with my account", tokens=8)
-history.add_assistant_message(
-    "I'd be happy to help! What specific issue are you experiencing?", 
-    tokens=15,
-    data='{"intent": "support_request", "confidence": 0.95}'
-)
-
-# Retrieve conversation history with all enhanced properties
-messages = history.get_history()
-print(f"Retrieved {len(messages)} messages from Azure Redis")
-
-# Advanced querying: find all messages for this user across sessions
-user_messages = history.query_redis("*customer_12345*", limit=100)
-print(f"Found {len(user_messages)} total messages for this customer")
-```
-
-**Why Azure Redis?**
-- ⚡ **Ultra-fast**: Sub-millisecond response times
-- 🔒 **Enterprise Security**: Azure AD integration, VNet support, encryption
-- 📈 **Scalable**: Automatic scaling and clustering
-- 🛡️ **Reliable**: 99.9% SLA with built-in backup and geo-replication
-
-> 💡 **Getting Started**: You can set up Azure Cache for Redis in minutes through the Azure Portal. Just grab your hostname and access key, and you're ready to go!
-
+## 🧪 Testing & Development
 
 ### Running Tests
 
@@ -514,6 +447,17 @@ Make sure you're using the project's virtual environment:
 # Or activate the virtual environment first
 .venv\Scripts\activate
 python -m pytest
+
+# On Unix/Linux/macOS
+source .venv/bin/activate
+python -m pytest
+```
+
+### Legacy ChatHistory API (Deprecated)
+
+> ⚠️ **Note**: The legacy ChatHistory API is deprecated and will be removed in a future version. Please migrate to the new [AIMemory API](#quick-start---aimemory-recommended) for new projects.
+
+For existing applications still using the legacy API, see [LEGACY_API.md](LEGACY_API.md) for documentation and migration guidance.
 
 # On Unix/Linux/macOS
 source .venv/bin/activate

@@ -37,8 +37,9 @@ jobs:
     - name: Test installation verification
       run: |
         python -c "
-        from nexamem import AIMemory, MemoryScope
-        memory = AIMemory(use_fakeredis=True)
+        from nexamem import AIMemory, AIMemoryConfig, StorageConfig, MemoryScope
+        config = AIMemoryConfig(default_scope='test', storage=StorageConfig.memory())
+        memory = AIMemory(config)
         scope = MemoryScope(agent_id='test', user_id='user', session_id='session', env='test')
         print('NexaMem installation verified successfully')
         "

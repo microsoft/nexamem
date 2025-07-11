@@ -274,6 +274,79 @@ config = AIMemoryConfig(
 )
 ```
 
+### YAML Channel Configuration
+
+The new AIMemory implementation supports YAML channel configuration, providing compatibility with the legacy AIMemory API:
+
+```python
+# Create channels.yaml
+channels_yaml = """
+channels:
+  working:
+    ttl_sec: 14400      # 4 hours
+    encrypt: true
+    quota_bytes: 2000000 # 2MB
+
+  procedure:
+    ttl_sec: 604800     # 7 days
+    encrypt: true
+
+  routing:
+    ttl_sec: 86400      # 24 hours
+    encrypt: false
+"""
+
+# Configure AIMemory with YAML
+config = AIMemoryConfig(
+    default_scope="chatbot_session",
+    storage=StorageConfig.memory(),
+    channels_yaml="channels.yaml",
+    strict_yaml_validation=True
+)
+
+memory = AIMemory(config)
+
+# Use legacy-compatible API
+scope = MemoryScope(
+    agent_id="investment_advisor", 
+    user_id="user_12345",
+    session_id="session_abc123",
+    env="prod"
+)
+
+# Write to channels
+message_id = memory.write(
+    scope=scope,
+    channel="working", 
+    content="User asked about portfolio allocation",
+    pii=False
+)
+
+# Read from channels  
+messages, metadata = memory.read(
+    scope=scope,
+    channel="working",
+    max_msgs=10
+)
+```
+
+### Dynamic Channel Registration
+
+Register channels at runtime without YAML:
+
+```python
+memory.register_channel(
+    name="debug_logs",
+    ttl_sec=3600,       # 1 hour
+    encrypt=False,
+    quota_bytes=1000000 # 1MB
+)
+
+# Verify channel exists
+assert memory.channel_exists("debug_logs")
+channel_config = memory.get_channel("debug_logs")
+```
+
 ## Testing
 
 The new architecture is designed for easy testing:
@@ -339,3 +412,48 @@ except Exception as e:
 See `examples/new_architecture_demo.py` for comprehensive examples of all features.
 
 The new architecture provides a solid foundation for enterprise AI memory management with Azure Cache for Redis as the primary backend while maintaining flexibility for other storage options.
+
+## Environment Variable Configuration
+
+Configure AIMemory using environment variables:
+
+```bash
+# Set environment variables
+export NEXAMEM_DEFAULT_SCOPE="production_app"
+export NEXAMEM_STORAGE_TYPE="azure_redis"
+export NEXAMEM_AZURE_HOSTNAME="cache.redis.cache.windows.net"
+export NEXAMEM_AZURE_ACCESS_KEY="your-access-key"
+export NEXAMEM_CHANNELS_YAML="/path/to/channels.yaml"
+export NEXAMEM_STRICT_YAML_VALIDATION="true"
+export NEXAMEM_ENABLE_AUDIT="true"
+export NEXAMEM_ENABLE_METRICS="true"
+```
+
+```python
+# Create configuration from environment
+config = AIMemoryConfig.from_env()
+memory = AIMemory(config)
+```
+
+### Mixed API Usage
+
+Use both new DI-based API and legacy channel API together:
+
+```python
+# New API for simple memory operations
+memory_id = memory.store(
+    content="Analysis results", 
+    metadata={"confidence": 0.95}
+)
+
+# Legacy API for channel-based operations
+message_id = memory.write(
+    scope=scope,
+    channel="working",
+    content="User interaction data"
+)
+
+# Retrieve using both APIs
+stored_memory = memory.retrieve(memory_id)
+channel_messages, _ = memory.read(scope=scope, channel="working")
+```

@@ -43,7 +43,7 @@ def test_python38_compatibility():
         storage_config = StorageConfig.memory()
         config = AIMemoryConfig(default_scope="test", storage=storage_config)
 
-        # Create AIMemory instance
+        # Create AIMemory instance using the new DI-based API
         memory = AIMemory(config)
 
         # Test storing and retrieving
