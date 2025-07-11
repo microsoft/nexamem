@@ -4,7 +4,8 @@
 # Core dependencies
 pydantic>=2.0,<3.0
 redis[asyncio]>=5.0.0,<6.0
-fakeredis>=2.21.0,<3.0
+# Pin fakeredis to 2.21.0 for Python 3.8 compatibility
+fakeredis==2.21.0
 PyYAML>=6.0,<7.0
 
 # Azure integration (included by default)

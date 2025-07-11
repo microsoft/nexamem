@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.3.5.dev2"
+version = "0.3.5.dev3"
 description = "NexaMem/AIMemory - Complete enterprise-grade Redis-backed conversational memory with built-in governance, Azure integration, content processing, and audit capabilities. Everything included - no extras needed!"
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }
@@ -21,7 +21,9 @@ dependencies = [
     
     # Redis dependencies (with async support)
     "redis[asyncio]>=5.0.0,<6.0",
-    "fakeredis>=2.21.0,<3.0",
+    # Pin fakeredis to 2.21.0 for Python 3.8 compatibility
+    # (newer versions use type annotations incompatible with Python 3.8)
+    "fakeredis==2.21.0",
     
     # YAML configuration support
     "PyYAML>=6.0,<7.0",

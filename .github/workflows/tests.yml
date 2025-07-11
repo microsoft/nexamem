@@ -106,4 +106,5 @@ jobs:
         
     - name: Run core tests on Python 3.8
       run: |
+        python test_py38_compatibility.py
         python -m pytest tests/test_class_method_existence.py tests/test_enums_and_constants.py -v
