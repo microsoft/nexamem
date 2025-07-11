@@ -32,7 +32,7 @@ except ImportError:
 
 from ..config.storage import AzureRedisConfig, AzureAuthMethod
 from ..memory_scope import MemoryScope
-from .base import AsyncStorageAdapter, StorageAdapter
+from .base import BaseStorage, BaseAsyncStorage
 
 
 class AzureRedisConnectionError(Exception):
@@ -251,7 +251,7 @@ class AzureRedisCollections:
         }
 
 
-class AsyncAzureRedisStorage(AsyncStorageAdapter):
+class AsyncAzureRedisStorage(BaseAsyncStorage):
     """Async Azure Cache for Redis storage adapter."""
 
     def __init__(self, config: AzureRedisConfig):
@@ -304,21 +304,20 @@ class AsyncAzureRedisStorage(AsyncStorageAdapter):
             # Get authentication token
             password = await self._get_auth_token()
 
-            # Create connection pool for better performance
-            self._connection_pool = redis_async.ConnectionPool(
+            # Create Redis client directly (no connection pool for Azure SSL)
+            # Azure Redis requires SSL and connection pools have SSL parameter issues
+            self._client = redis_async.Redis(
                 host=self.config.hostname,
                 port=self.config.port,
                 password=password,
                 ssl=self.config.ssl,
+                ssl_cert_reqs=None,  # Required for Azure Redis
                 db=self.config.db,
-                max_connections=self.config.max_connections,
-                retry_on_timeout=self.config.retry_on_timeout,
                 socket_connect_timeout=self.config.socket_connect_timeout,
                 socket_timeout=self.config.socket_timeout,
                 decode_responses=True
             )
 
-            self._client = redis_async.Redis(connection_pool=self._connection_pool)
             self._collections = AzureRedisCollections(
                 self._client,
                 self.config.collection_prefix
@@ -556,6 +555,212 @@ class AsyncAzureRedisStorage(AsyncStorageAdapter):
                 return None
         return None
 
+    async def store_memory(
+        self,
+        memory_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        scope: Optional[str] = None
+    ) -> bool:
+        """Store a memory in Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            memory_data = {
+                'content': content,
+                'metadata': metadata or {},
+                'scope': scope,
+                'created_at': time.time(),
+                'updated_at': time.time()
+            }
+            
+            # Store in Redis hash
+            await self._client.hset(
+                f"{self.config.collection_prefix}:memories",
+                memory_id,
+                json.dumps(memory_data)
+            )
+            
+            # Add to scope index if scope provided
+            if scope:
+                await self._client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+            
+            # Add to audit log
+            audit_entry = {
+                'memory_id': memory_id,
+                'action': 'store',
+                'timestamp': time.time(),
+                'scope': scope
+            }
+            await self._client.xadd(
+                f"{self.config.collection_prefix}:audit",
+                audit_entry
+            )
+            
+            return True
+        except Exception:
+            return False
+
+    async def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a memory from Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            data = await self._client.hget(f"{self.config.collection_prefix}:memories", memory_id)
+            if data:
+                return json.loads(data)
+            return None
+        except Exception:
+            return None
+
+    async def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory from Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            # Get memory data first to update scope index
+            memory_data = await self.retrieve_memory(memory_id)
+            if not memory_data:
+                return False
+            
+            scope = memory_data.get('scope')
+            
+            # Remove from main storage
+            deleted = await self._client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
+            
+            # Remove from scope index
+            if scope:
+                await self._client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+            
+            # Add to audit log
+            audit_entry = {
+                'memory_id': memory_id,
+                'action': 'delete',
+                'timestamp': time.time(),
+                'scope': scope
+            }
+            await self._client.xadd(
+                f"{self.config.collection_prefix}:audit",
+                audit_entry
+            )
+            
+            return deleted > 0
+        except Exception:
+            return False
+
+    async def list_memories(
+        self,
+        scope: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """List memory IDs from Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            if scope:
+                # Get memories from scope index
+                memory_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+            else:
+                # Get all memory IDs
+                memory_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
+            
+            if limit:
+                memory_ids = memory_ids[:limit]
+            
+            return memory_ids
+        except Exception:
+            return []
+
+    async def search_memories(
+        self,
+        query: str,
+        scope: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """Search memories by content in Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            # Get candidate memory IDs
+            if scope:
+                candidate_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+            else:
+                candidate_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
+            
+            matching_ids = []
+            query_lower = query.lower()
+            
+            for memory_id in candidate_ids:
+                memory_data = await self.retrieve_memory(memory_id)
+                if memory_data and query_lower in memory_data.get('content', '').lower():
+                    matching_ids.append(memory_id)
+                    
+                    if limit and len(matching_ids) >= limit:
+                        break
+            
+            return matching_ids
+        except Exception:
+            return []
+
+    async def get_audit_log(
+        self,
+        memory_id: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Get audit log entries from Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            # Read from audit stream
+            stream_name = f"{self.config.collection_prefix}:audit"
+            entries = await self._client.xread({stream_name: 0}, count=limit or 100)
+            
+            audit_entries = []
+            for _stream, messages in entries:
+                for msg_id, fields in messages:
+                    entry = dict(fields)
+                    entry['id'] = msg_id
+                    
+                    # Filter by memory_id if specified
+                    if memory_id is None or entry.get('memory_id') == memory_id:
+                        audit_entries.append(entry)
+            
+            return audit_entries
+        except Exception:
+            return []
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get storage statistics from Azure Redis (async)."""
+        try:
+            await self.connect()
+            
+            total_memories = await self._client.hlen(f"{self.config.collection_prefix}:memories")
+            
+            # Count scopes
+            scope_keys = await self._client.keys(f"{self.config.collection_prefix}:scope:*")
+            total_scopes = len(scope_keys)
+            
+            # Count audit entries
+            try:
+                audit_info = await self._client.xinfo_stream(f"{self.config.collection_prefix}:audit")
+                audit_entries = audit_info.get('length', 0)
+            except Exception:
+                audit_entries = 0
+            
+            return {
+                'total_memories': total_memories,
+                'total_scopes': total_scopes,
+                'audit_entries': audit_entries,
+                'storage_type': 'azure_redis_async'
+            }
+        except Exception:
+            return {
+                'total_memories': 0,
+                'total_scopes': 0,
+                'audit_entries': 0,
+                'storage_type': 'azure_redis_async'
+            }
+
     async def ping(self) -> bool:
         """Test Azure Redis connection."""
         try:
@@ -565,15 +770,8 @@ class AsyncAzureRedisStorage(AsyncStorageAdapter):
         except Exception:
             return False
 
-    async def close(self) -> None:
-        """Close Azure Redis connection."""
-        if self._client:
-            await self._client.close()
-        if self._connection_pool:
-            await self._connection_pool.disconnect()
 
-
-class AzureRedisStorage(StorageAdapter):
+class AzureRedisStorage(BaseStorage):
     """Sync Azure Cache for Redis storage adapter."""
 
     def __init__(self, config: AzureRedisConfig):
@@ -873,6 +1071,212 @@ class AzureRedisStorage(StorageAdapter):
             except json.JSONDecodeError:
                 return None
         return None
+
+    def store_memory(
+        self,
+        memory_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        scope: Optional[str] = None
+    ) -> bool:
+        """Store a memory in Azure Redis."""
+        try:
+            self.connect()
+            
+            memory_data = {
+                'content': content,
+                'metadata': metadata or {},
+                'scope': scope,
+                'created_at': time.time(),
+                'updated_at': time.time()
+            }
+            
+            # Store in Redis hash
+            self._client.hset(
+                f"{self.config.collection_prefix}:memories",
+                memory_id,
+                json.dumps(memory_data)
+            )
+            
+            # Add to scope index if scope provided
+            if scope:
+                self._client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+            
+            # Add to audit log
+            audit_entry = {
+                'memory_id': memory_id,
+                'action': 'store',
+                'timestamp': time.time(),
+                'scope': scope
+            }
+            self._client.xadd(
+                f"{self.config.collection_prefix}:audit",
+                audit_entry
+            )
+            
+            return True
+        except Exception:
+            return False
+
+    def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a memory from Azure Redis."""
+        try:
+            self.connect()
+            
+            data = self._client.hget(f"{self.config.collection_prefix}:memories", memory_id)
+            if data:
+                return json.loads(data)
+            return None
+        except Exception:
+            return None
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory from Azure Redis."""
+        try:
+            self.connect()
+            
+            # Get memory data first to update scope index
+            memory_data = self.retrieve_memory(memory_id)
+            if not memory_data:
+                return False
+            
+            scope = memory_data.get('scope')
+            
+            # Remove from main storage
+            deleted = self._client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
+            
+            # Remove from scope index
+            if scope:
+                self._client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+            
+            # Add to audit log
+            audit_entry = {
+                'memory_id': memory_id,
+                'action': 'delete',
+                'timestamp': time.time(),
+                'scope': scope
+            }
+            self._client.xadd(
+                f"{self.config.collection_prefix}:audit",
+                audit_entry
+            )
+            
+            return deleted > 0
+        except Exception:
+            return False
+
+    def list_memories(
+        self,
+        scope: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """List memory IDs from Azure Redis."""
+        try:
+            self.connect()
+            
+            if scope:
+                # Get memories from scope index
+                memory_ids = list(self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+            else:
+                # Get all memory IDs
+                memory_ids = list(self._client.hkeys(f"{self.config.collection_prefix}:memories"))
+            
+            if limit:
+                memory_ids = memory_ids[:limit]
+            
+            return memory_ids
+        except Exception:
+            return []
+
+    def search_memories(
+        self, 
+        query: str, 
+        scope: Optional[str] = None, 
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """Search memories by content in Azure Redis."""
+        try:
+            self.connect()
+            
+            # Get candidate memory IDs
+            if scope:
+                candidate_ids = list(self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+            else:
+                candidate_ids = list(self._client.hkeys(f"{self.config.collection_prefix}:memories"))
+            
+            matching_ids = []
+            query_lower = query.lower()
+            
+            for memory_id in candidate_ids:
+                memory_data = self.retrieve_memory(memory_id)
+                if memory_data and query_lower in memory_data.get('content', '').lower():
+                    matching_ids.append(memory_id)
+                    
+                    if limit and len(matching_ids) >= limit:
+                        break
+            
+            return matching_ids
+        except Exception:
+            return []
+
+    def get_audit_log(
+        self, 
+        memory_id: Optional[str] = None, 
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Get audit log entries from Azure Redis."""
+        try:
+            self.connect()
+            
+            # Read from audit stream
+            stream_name = f"{self.config.collection_prefix}:audit"
+            entries = self._client.xread({stream_name: 0}, count=limit or 100)
+            
+            audit_entries = []
+            for _stream, messages in entries:
+                for msg_id, fields in messages:
+                    entry = dict(fields)
+                    entry['id'] = msg_id
+                    
+                    # Filter by memory_id if specified
+                    if memory_id is None or entry.get('memory_id') == memory_id:
+                        audit_entries.append(entry)
+            
+            return audit_entries
+        except Exception:
+            return []
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get storage statistics from Azure Redis."""
+        try:
+            self.connect()
+            
+            total_memories = self._client.hlen(f"{self.config.collection_prefix}:memories")
+            
+            # Count scopes
+            scope_keys = self._client.keys(f"{self.config.collection_prefix}:scope:*")
+            total_scopes = len(scope_keys)
+            
+            # Count audit entries
+            try:
+                audit_info = self._client.xinfo_stream(f"{self.config.collection_prefix}:audit")
+                audit_entries = audit_info.get('length', 0)
+            except Exception:
+                audit_entries = 0
+            
+            return {
+                'total_memories': total_memories,
+                'total_scopes': total_scopes,
+                'audit_entries': audit_entries,
+                'storage_type': 'azure_redis'
+            }
+        except Exception:
+            return {
+                'total_memories': 0,
+                'total_scopes': 0,
+                'audit_entries': 0,
+                'storage_type': 'azure_redis'
+            }
 
     def ping(self) -> bool:
         """Test Azure Redis connection."""
