@@ -104,8 +104,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest pytest-asyncio
         pip install -e .
-        
-    - name: Run core tests on Python 3.8
+
+    - name: Run pytest with minimal dependencies using python version 3.8
       run: |
-        python test_py38_compatibility.py
-        python -m pytest tests/test_class_method_existence.py tests/test_enums_and_constants.py -v
+        python -m pytest tests/ -v --tb=short
