@@ -1,171 +1,134 @@
 #!/usr/bin/env python3
 """
-Manual test runner to verify our Azure Redis implementation works.
+Simple test runner script for NexaMem/AIMemory
+Provides easy access to different test categories and configurations.
 """
+import argparse
+import subprocess
 import sys
-import os
+from pathlib import Path
 
-# Add the src directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-def test_basic_imports():
-    """Test that we can import all the modules."""
+def run_command(cmd, description):
+    """Run a command and handle errors."""
+    print(f"\n🧪 {description}")
+    print(f"Command: {' '.join(cmd)}")
+    print("-" * 50)
+
     try:
-        from nexamem import initialize, ChatHistory, AIMemory, MemoryScope
-        from nexamem.redis_adapter import RedisAdapter, AzureRedisConnectionHelper
-        from nexamem.config import get_config, ConfigError
-        print("✅ All imports successful")
+        subprocess.run(cmd, check=True, cwd=Path(__file__).parent)
+        print(f"✅ {description} completed successfully!")
         return True
-    except Exception as e:
-        print(f"❌ Import failed: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ {description} failed with exit code {e.returncode}")
         return False
 
-def test_config_validation():
-    """Test config validation including Redis support."""
-    try:
-        from nexamem import initialize
-        from nexamem.config import ConfigError
-        
-        # Test valid Redis config
-        initialize({
-            "history_storage": "redis",
-            "redis_config": {
-                "host": "localhost",
-                "port": 6379
-            }
-        })
-        print("✅ Redis config validation passed")
-        
-        # Test Azure Redis config
-        initialize({
-            "history_storage": "redis", 
-            "redis_config": {
-                "azure_hostname": "test.redis.cache.windows.net",
-                "azure_access_key": "test_key"
-            }
-        })
-        print("✅ Azure Redis config validation passed")
-        
-        return True
-    except Exception as e:
-        print(f"❌ Config validation failed: {e}")
-        return False
-
-def test_azure_helper():
-    """Test Azure Redis connection helper."""
-    try:
-        from nexamem.redis_adapter import AzureRedisConnectionHelper
-        
-        # Test access key config
-        config = AzureRedisConnectionHelper.get_azure_redis_config(
-            hostname="test.redis.cache.windows.net",
-            access_key="test_key"
-        )
-        
-        assert config['host'] == "test.redis.cache.windows.net"
-        assert config['port'] == 6380
-        assert config['ssl'] is True
-        assert config['password'] == "test_key"
-        
-        print("✅ Azure Redis helper works correctly")
-        return True
-    except Exception as e:
-        print(f"❌ Azure Redis helper failed: {e}")
-        return False
-
-def test_memory_storage():
-    """Test basic memory storage functionality."""
-    try:
-        from nexamem import initialize, ChatHistory
-        
-        # Initialize with memory storage
-        initialize({"history_storage": "memory"})
-        
-        history = ChatHistory()
-        history.add_message('user', 'Test message')
-        history.add_message('assistant', 'Test response', tokens=10)
-        
-        messages = history.get_history()
-        assert len(messages) == 2
-        assert messages[0]['role'] == 'user'
-        assert messages[0]['content'] == 'Test message'
-        assert messages[1]['tokens'] == 10
-        
-        print("✅ Memory storage works correctly")
-        return True
-    except Exception as e:
-        print(f"❌ Memory storage failed: {e}")
-        return False
-
-def test_enhanced_properties():
-    """Test enhanced message properties."""
-    try:
-        from nexamem import initialize, ChatHistory
-        
-        initialize({"history_storage": "memory"})
-        
-        history = ChatHistory()
-        history.set_session_context(
-            agent_id="test_agent",
-            user_id="test_user",
-            env="test"
-        )
-        
-        history.add_user_message("Hello", tokens=5)
-        messages = history.get_history()
-        
-        msg = messages[0]
-        assert 'agent_id' in msg
-        assert 'user_id' in msg
-        assert 'session_id' in msg
-        assert 'env' in msg
-        assert 'timestamp' in msg
-        assert 'tokens' in msg
-        assert 'data' in msg
-        
-        assert msg['agent_id'] == "test_agent"
-        assert msg['user_id'] == "test_user"
-        assert msg['env'] == "test"
-        assert msg['tokens'] == 5
-        
-        print("✅ Enhanced properties work correctly")
-        return True
-    except Exception as e:
-        print(f"❌ Enhanced properties failed: {e}")
-        return False
 
 def main():
-    """Run all tests."""
-    print("🧪 Running NexaMem Test Suite")
-    print("=" * 50)
+    parser = argparse.ArgumentParser(description="NexaMem Test Runner")
+    parser.add_argument(
+        "category",
+        nargs="?",
+        default="all",
+        choices=[
+            "all", "quick", "core", "features", "legacy",
+            "fresh", "coverage", "lint", "format"
+        ],
+        help="Test category to run"
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--no-cov", action="store_true", help="Skip coverage report")
     
-    tests = [
-        test_basic_imports,
-        test_config_validation,
-        test_azure_helper,
-        test_memory_storage,
-        test_enhanced_properties
-    ]
+    args = parser.parse_args()
     
-    passed = 0
-    total = len(tests)
+    # Base pytest command
+    base_cmd = [sys.executable, "-m", "pytest"]
+    if args.verbose:
+        base_cmd.append("-v")
     
-    for test in tests:
-        try:
-            if test():
-                passed += 1
-        except Exception as e:
-            print(f"❌ Test {test.__name__} crashed: {e}")
+    success = True
     
-    print("=" * 50)
-    print(f"Results: {passed}/{total} tests passed")
+    if args.category == "all":
+        # Run all tests with coverage
+        cmd = base_cmd + ["tests/"]
+        if not args.no_cov:
+            cmd.extend(["--cov=nexamem", "--cov-report=html", "--cov-report=term-missing"])
+        success = run_command(cmd, "Running all tests")
+        
+    elif args.category == "quick":
+        # Run fast tests only
+        cmd = base_cmd + ["tests/", "-m", "not slow"]
+        success = run_command(cmd, "Running quick tests")
+        
+    elif args.category == "core":
+        # Run core AIMemory functionality tests (working tests)
+        cmd = base_cmd + [
+            "tests/test_working_basic.py",
+            "tests/test_memory_scope.py",
+        ]
+        success = run_command(cmd, "Running core functionality tests")
+        
+    elif args.category == "features":
+        # Run feature-specific tests
+        cmd = base_cmd + [
+            "tests/test_fresh_comprehensive.py::TestFreshPolicyEngine",
+            "tests/test_fresh_comprehensive.py::TestFreshMetrics",
+            "tests/test_fresh_comprehensive.py::TestFreshAuditSink",
+            "tests/test_fresh_comprehensive.py::TestFreshConfig",
+        ]
+        success = run_command(cmd, "Running feature-specific tests")
+        
+    elif args.category == "legacy":
+        # Run legacy API tests
+        cmd = base_cmd + [
+            "tests/test_channels.py",
+            "tests/test_memory_scope.py",
+            "tests/test_policy.py",
+            "tests/test_content_processor.py",
+            "tests/test_aimemory.py",
+        ]
+        success = run_command(cmd, "Running legacy API tests")
+        
+    elif args.category == "fresh":
+        # Run only the new comprehensive tests
+        cmd = base_cmd + ["tests/test_fresh_comprehensive.py"]
+        success = run_command(cmd, "Running fresh comprehensive tests")
+        
+    elif args.category == "coverage":
+        # Run tests with detailed coverage report
+        cmd = base_cmd + [
+            "tests/",
+            "--cov=nexamem",
+            "--cov-report=html",
+            "--cov-report=term-missing",
+            "--cov-report=xml",
+        ]
+        success = run_command(cmd, "Running tests with coverage report")
+        print("\n📊 Coverage report generated in htmlcov/index.html")
+        
+    elif args.category == "lint":
+        # Run linting
+        commands = [
+            ([sys.executable, "-m", "ruff", "check", "src/", "tests/"], "Running Ruff linter"),
+            ([sys.executable, "-m", "mypy", "src/"], "Running MyPy type checker"),
+        ]
+        
+        for cmd, desc in commands:
+            if not run_command(cmd, desc):
+                success = False
+
+    elif args.category == "format":
+        # Run formatting
+        cmd = [sys.executable, "-m", "ruff", "format", "src/", "tests/"]
+        success = run_command(cmd, "Formatting code with Ruff")
     
-    if passed == total:
-        print("🎉 All tests passed!")
+    if success:
+        print("\n🎉 All operations completed successfully!")
         return 0
     else:
-        print("⚠️  Some tests failed")
+        print("\n💥 Some operations failed. Check the output above.")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
