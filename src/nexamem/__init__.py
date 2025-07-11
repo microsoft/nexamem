@@ -1,12 +1,19 @@
 from .history import ChatHistory
 from .config import initialize, get_config
-from .aimemory import AIMemory, AsyncAIMemory
+from .aimemory import AIMemory as LegacyAIMemory, AsyncAIMemory as LegacyAsyncAIMemory
 from .memory_scope import MemoryScope
 from .channels import ChannelConfig, ChannelManager, ChannelAlreadyExists
 from .policy import PolicyEngine, PIIDetector, PolicyViolation, QuotaExceeded, EncryptionRequired, TTLViolation
 from .content_processor import ContentProcessorChain, PIIRedactor, ContentEnricher
 from .audit import AuditSink, AsyncAuditSink
 from . import metrics
+
+# New DI-based API
+from .new_aimemory import AIMemory, AsyncAIMemory, create_aimemory
+from .config.aimemory import AIMemoryConfig
+from .config.storage import StorageConfig, AzureRedisConfig, MemoryConfig, FileConfig, SQLiteConfig
+from .di import DIContainer, ServiceRegistry, ServiceProvider
+from .storage import StorageFactory, create_storage_from_config
 
 # Version information
 __version__ = "0.3.5.dev2"
@@ -18,9 +25,24 @@ __all__ = [
     "ChatHistory",
     "initialize",
     "get_config",
-    # New AIMemory API
+    "LegacyAIMemory",
+    "LegacyAsyncAIMemory",
+    # New DI-based AIMemory API
     "AIMemory",
     "AsyncAIMemory",
+    "create_aimemory",
+    "AIMemoryConfig",
+    "StorageConfig",
+    "AzureRedisConfig",
+    "MemoryConfig",
+    "FileConfig",
+    "SQLiteConfig",
+    "DIContainer",
+    "ServiceRegistry",
+    "ServiceProvider",
+    "StorageFactory",
+    "create_storage_from_config",
+    # Existing components
     "MemoryScope",
     "ChannelConfig",
     "ChannelManager",
