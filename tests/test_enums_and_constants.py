@@ -209,10 +209,12 @@ class TestPackageConstants:
         assert isinstance(version, str)
         assert len(version) > 0
         
-        # Test version format (should be semantic versioning like "0.3.4")
-        parts = version.split('.')
-        assert len(parts) >= 2  # At least major.minor
-        assert all(part.isdigit() for part in parts)
+        # Test version format (should be semantic versioning like "0.3.4" or "0.3.5.dev2")
+        # Handle both release and development versions
+        import re
+        # Pattern matches: X.Y.Z or X.Y.Z.devN or X.Y.ZdevN or X.Y.Z-alpha/beta/rc patterns
+        version_pattern = r'^\d+\.\d+(\.\d+)?(\.?(dev|alpha|beta|rc)\d*)?$'
+        assert re.match(version_pattern, version), f"Version '{version}' doesn't match expected format"
     
     def test_package_all_completeness(self):
         """Test that __all__ contains all public symbols."""
