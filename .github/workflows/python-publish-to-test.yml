@@ -85,11 +85,11 @@ jobs:
 
   publish-to-testpypi:
     name: Publish Python 🐍 distribution 📦 to TestPyPI
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}  # only publish to TestPyPI on non-tag pushes
     needs:
     - test
     - build
     runs-on: ubuntu-latest
-    continue-on-error: true # continue even if the publish fails, so that we can still publish to PyPI
 
     environment:
       name: testpypi
