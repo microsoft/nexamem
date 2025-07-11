@@ -1,12 +1,101 @@
+# ================================================================================
+# AIMemory Channels Configuration
+# ================================================================================
+# 
+# This file defines memory channels for AIMemory instances with strict schema
+# validation to ensure configuration integrity and security.
+#
+# 📋 SCHEMA REQUIREMENTS:
+# 
+# Channel Names:
+#   • Must be snake_case: [a-z][a-z0-9_]*
+#   • Maximum 50 characters
+#   • Cannot use reserved names: admin, system, internal, redis, audit
+#
+# Required Fields:
+#   • ttl_sec: Integer (60 to 604,800 seconds = 1 minute to 7 days)
+#
+# Optional Fields:
+#   • encrypt: Boolean (default: false) - enables client-side encryption
+#   • quota_bytes: Integer (1 to 1,000,000,000) - daily quota per (agent, user, channel)
+#
+# 🔍 VALIDATION:
+#   • Strict validation enabled by default in AIMemory
+#   • Use strict_yaml_validation=False for legacy configurations
+#   • Run validate_yaml_schema() to check configuration
+#
+# ================================================================================
+
 channels:
+  
+  # 💬 WORKING CHANNEL
+  # Recent conversational memory for active dialogue
   working:
-    ttl_sec: 14400      # 4 hours
-    encrypt: true
+    ttl_sec: 14400        # 4 hours (14,400 seconds)
+                          # Optimal for: Active conversation context
+                          # Range: 60-604800 seconds (1 min - 7 days)
+    
+    encrypt: true         # Enable client-side encryption
+                          # Required for: PII and sensitive conversation data
+                          # Values: true (encrypted) | false (plain text)
+    
+    quota_bytes: 1000000  # 1MB daily quota per (agent, user, channel)
+                          # Prevents: Memory abuse and cost overruns
+                          # Range: 1 to 1,000,000,000 bytes (1B - 1GB)
 
+  # 📋 PROCEDURE CHANNEL  
+  # Workflow checkpoints and long-term process state
   procedure:
-    ttl_sec: 604800     # 7 days
-    encrypt: true
+    ttl_sec: 604800       # 7 days (604,800 seconds) - maximum allowed
+                          # Optimal for: Multi-step workflows, approval processes
+                          # Use case: Investment onboarding, loan processing
+    
+    encrypt: true         # Enable encryption for sensitive workflow data
+                          # Required for: Business process data, customer state
+                          # Note: Procedure data often contains PII/sensitive info
 
+    # quota_bytes: <optional>
+    # No quota limit for procedure channel to support large workflow states
+    # Alternatively, set explicit limit: quota_bytes: 5000000  # 5MB
+
+  # 🧭 ROUTING CHANNEL
+  # Classification hints, breadcrumbs, and routing metadata  
   routing:
-    ttl_sec: 86400      # 24 hours
-    encrypt: false
+    ttl_sec: 86400        # 24 hours (86,400 seconds)
+                          # Optimal for: Session routing, classification context
+                          # Use case: Agent selection, intent classification
+    
+    encrypt: false        # No encryption for routing metadata
+                          # Rationale: Contains non-sensitive routing hints only
+                          # Performance: Faster access without decryption overhead
+
+    # quota_bytes: <optional>
+    # No explicit quota - routing data typically small
+    # Example explicit limit: quota_bytes: 100000  # 100KB
+
+# ================================================================================
+# 📖 USAGE EXAMPLES:
+#
+# Load with strict validation (default):
+#   memory = AIMemory(channels_yaml="channels.yaml")
+#
+# Load with legacy support:
+#   memory = AIMemory(channels_yaml="channels.yaml", strict_yaml_validation=False)
+#
+# Add runtime channels:
+#   memory.register_channel("debug_logs", ttl_sec=3600, encrypt=False)
+#
+# ================================================================================
+#
+# 🚀 TEAM-SPECIFIC CHANNELS:
+# 
+# Different teams can define additional channels as needed:
+#
+# • Orchestrator: Typically uses 'routing' + 'working'
+# • GPT Fallback: Usually uses 'working' (+ future 'semantic')  
+# • Domain Agents: Often need 'working' + 'procedure'
+# • Data Science: May add 'debug_logs', 'experiment_data'
+#
+# Add new channels by editing this file or using runtime registration.
+#
+# ================================================================================

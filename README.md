@@ -77,27 +77,151 @@ messages, metadata = memory.read(
 )
 
 print(f"Retrieved {len(messages)} messages")
+
+# Validate configuration (optional but recommended)
+from nexamem.channels import validate_yaml_schema
+
+try:
+    validate_yaml_schema("channels.yaml")
+    print("✅ Channel configuration is valid!")
+except Exception as e:
+    print(f"❌ Configuration error: {e}")
 ```
+
+> **💡 Pro Tip**: AIMemory includes strict YAML schema validation by default to catch configuration errors early. See the [Schema Validation](#-yaml-schema-validation) section for details.
 
 ### Channel Configuration (channels.yaml)
 
-Define your channels with specific policies:
+AIMemory uses **strict YAML schema validation** to ensure configuration integrity and security. Each channel must follow specific rules and constraints.
+
+#### Schema Requirements
+
+**Channel Names:**
+- Must be `snake_case`: start with lowercase letter, followed by letters/numbers/underscores
+- Maximum 50 characters
+- Cannot use reserved names: `admin`, `system`, `internal`, `redis`, `audit`
+- Pattern: `^[a-z][a-z0-9_]*$`
+
+**Required Fields:**
+- `ttl_sec`: Time-to-live in seconds (60 to 604,800 = 1 minute to 7 days)
+
+**Optional Fields:**
+- `encrypt`: Boolean (default: `false`) - enables client-side encryption
+- `quota_bytes`: Integer (1 to 1,000,000,000) - daily quota per (agent, user, channel)
+
+#### Valid Configuration Example
 
 ```yaml
 channels:
-  working:          # Recent dialogue
-    ttl_sec: 14400  # 4 hours
-    encrypt: true
-    quota_bytes: 1000000  # 1MB daily quota
+  working:              # ✅ Valid: snake_case name
+    ttl_sec: 14400      # ✅ Valid: 4 hours (within 1 min - 7 days range)
+    encrypt: true       # ✅ Valid: boolean value
+    quota_bytes: 1000000 # ✅ Valid: 1MB daily quota
 
-  procedure:        # Workflow checkpoints  
-    ttl_sec: 604800 # 7 days
-    encrypt: true
+  procedure:            # ✅ Valid: workflow checkpoints
+    ttl_sec: 604800     # ✅ Valid: 7 days (maximum allowed)
+    encrypt: true       # ✅ Valid: encryption for sensitive workflows
 
-  routing:          # Breadcrumbs, classifier hints
-    ttl_sec: 86400  # 24 hours
-    encrypt: false
+  routing:              # ✅ Valid: classification hints
+    ttl_sec: 86400      # ✅ Valid: 24 hours
+    encrypt: false      # ✅ Valid: no encryption needed for routing
 ```
+
+#### Schema Validation Control
+
+```python
+# Strict validation (default - recommended)
+memory = AIMemory(
+    channels_yaml="channels.yaml",
+    strict_yaml_validation=True  # Default
+)
+
+# Backward compatibility mode (legacy configurations)
+memory = AIMemory(
+    channels_yaml="legacy_channels.yaml",
+    strict_yaml_validation=False
+)
+
+# Standalone validation
+from nexamem.channels import validate_yaml_schema, YamlSchemaError
+
+try:
+    validate_yaml_schema("channels.yaml")
+    print("✅ Configuration is valid!")
+except YamlSchemaError as e:
+    print(f"❌ Validation failed: {e}")
+```
+
+## 🔐 YAML Schema Validation
+
+AIMemory enforces **strict schema validation** to prevent configuration errors and ensure security compliance.
+
+### Validation Features
+
+- **Channel Name Validation**: Enforces `snake_case` naming conventions
+- **Field Type Checking**: Validates data types for all configuration fields  
+- **Range Validation**: Ensures TTL and quota values are within safe limits
+- **Security Enforcement**: Blocks reserved names and unknown fields
+- **Clear Error Messages**: Provides specific, actionable error descriptions
+
+### Validation Modes
+
+```python
+# Strict validation (recommended for production)
+memory = AIMemory(
+    channels_yaml="channels.yaml",
+    strict_yaml_validation=True  # Default
+)
+
+# Legacy mode (for backward compatibility)
+memory = AIMemory(
+    channels_yaml="legacy_channels.yaml", 
+    strict_yaml_validation=False
+)
+```
+
+### Schema Validation Tools
+
+```python
+from nexamem.channels import validate_yaml_schema, generate_yaml_schema_docs
+
+# Validate configuration file
+try:
+    validate_yaml_schema("channels.yaml")
+    print("✅ Configuration is valid")
+except YamlSchemaError as e:
+    print(f"❌ Validation failed: {e}")
+
+# Generate schema documentation
+print(generate_yaml_schema_docs())
+```
+
+### Common Validation Errors
+
+| Error Type | Example | Fix |
+|------------|---------|-----|
+| Invalid Name | `Invalid-Channel` | Use `invalid_channel` |
+| TTL Range | `ttl_sec: 999999` | Use value ≤ 604800 (7 days) |
+| Reserved Name | `admin:` | Use `admin_channel` or similar |
+| Unknown Field | `custom_field: value` | Remove or use allowed fields |
+| Wrong Type | `encrypt: "yes"` | Use `encrypt: true` |
+
+#### Common Validation Errors
+
+```yaml
+# ❌ INVALID Examples:
+channels:
+  Invalid-Name:         # ❌ Hyphens not allowed
+  user_123:            # ❌ Cannot start with number
+  admin:               # ❌ Reserved name
+  working:
+    ttl_sec: 999999    # ❌ Exceeds 7 days (604,800 seconds)
+    encrypt: "yes"     # ❌ Must be boolean (true/false)
+    quota_bytes: -100  # ❌ Must be positive
+    unknown_field: 1   # ❌ Unknown field not allowed
+```
+
+For detailed schema documentation, see [YAML_SCHEMA_VALIDATION.md](YAML_SCHEMA_VALIDATION.md).
 
 ### Enhanced Features
 
@@ -401,35 +525,60 @@ pytest --cov=nexamem tests/
 
 ## Migration Guide
 
-### From ChatHistory to AIMemory
+### From Legacy Configurations
 
-Old API:
+If you have existing `channels.yaml` files that don't pass strict validation:
+
+#### Step 1: Identify Issues
+
+Run validation to see what needs fixing:
+
 ```python
-from nexamem import initialize, ChatHistory
+from nexamem.channels import validate_yaml_schema, YamlSchemaError
 
-initialize({"history_storage": "redis", "redis_host": "localhost"})
-history = ChatHistory()
-history.add_message('user', 'Hello!')
-messages = history.get_history()
+try:
+    validate_yaml_schema("legacy_channels.yaml")
+except YamlSchemaError as e:
+    print("Issues to fix:")
+    print(e)
 ```
 
-New API:
+#### Step 2: Common Fixes
+
+| Issue | Before | After |
+|-------|--------|-------|
+| **Invalid Names** | `user-context` | `user_context` |
+| **Case Issues** | `Working` | `working` |
+| **TTL Range** | `ttl_sec: 999999` | `ttl_sec: 604800` |
+| **Type Issues** | `encrypt: "true"` | `encrypt: true` |
+| **Reserved Names** | `admin:` | `admin_channel:` |
+| **Unknown Fields** | `timeout: 30` | *(remove field)* |
+
+#### Step 3: Gradual Migration
+
 ```python
-from nexamem import AIMemory, MemoryScope
+# Phase 1: Disable strict validation temporarily
+memory = AIMemory(
+    channels_yaml="legacy_channels.yaml",
+    strict_yaml_validation=False  # Temporary
+)
 
-memory = AIMemory(redis_host="localhost", use_fakeredis=True)
-scope = MemoryScope(agent_id="chatbot", user_id="user123")
+# Phase 2: Fix issues and test with validation
+validate_yaml_schema("fixed_channels.yaml")
 
-memory.write(scope=scope, channel="working", content="Hello!")
-messages, metadata = memory.read(scope=scope, channel="working")
+# Phase 3: Enable strict validation
+memory = AIMemory(
+    channels_yaml="fixed_channels.yaml",
+    strict_yaml_validation=True   # Production ready
+)
 ```
 
-### Benefits of Migration
-- **Scalability**: Redis-backed with proper key management
-- **Governance**: Policy enforcement and audit trails
-- **Multi-tenancy**: Scope-based isolation 
-- **Flexibility**: Channel-based organization
-- **Performance**: Async support for high-throughput
+### Configuration Examples
+
+See example configurations:
+- [`channels.yaml`](channels.yaml) - Default configuration with full documentation
+- [`examples/valid_channels.yaml`](examples/valid_channels.yaml) - Extended valid example
+- [`examples/invalid_channels.yaml`](examples/invalid_channels.yaml) - Common mistakes to avoid
 
 ## License
 

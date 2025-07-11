@@ -41,6 +41,7 @@ class AIMemory:
         enable_audit: bool = True,
         enable_metrics: bool = True,
         enable_content_processing: bool = False,
+        strict_yaml_validation: bool = True,
         **redis_kwargs
     ):
         """
@@ -57,6 +58,7 @@ class AIMemory:
             enable_audit: Enable audit logging to Redis Stream
             enable_metrics: Enable metrics collection
             enable_content_processing: Enable content processor chain
+            strict_yaml_validation: Enable strict YAML schema validation
             **redis_kwargs: Additional Redis connection parameters
         """
         # Initialize Redis adapter
@@ -71,7 +73,7 @@ class AIMemory:
         )
         
         # Initialize channel manager
-        self.channels = ChannelManager(channels_yaml)
+        self.channels = ChannelManager(channels_yaml, strict_validation=strict_yaml_validation)
         
         # Initialize policy engine
         self.policy = PolicyEngine()
