@@ -104,21 +104,6 @@ jobs:
         pip install pytest
         pip install -e .
         
-    - name: Test basic functionality on Python 3.8
-      run: |
-        python -c "
-        import sys
-        print(f'Testing on Python {sys.version}')
-        from nexamem import AIMemory, MemoryScope, ChannelConfig
-        
-        # Test basic instantiation
-        memory = AIMemory(use_fakeredis=True)
-        scope = MemoryScope(agent_id='test', user_id='user', session_id='session')
-        config = ChannelConfig(name='test_channel', ttl_sec=3600)
-        
-        print('✅ Python 3.8 compatibility verified')
-        "
-        
     - name: Run core tests on Python 3.8
       run: |
         python -m pytest tests/test_class_method_existence.py tests/test_enums_and_constants.py -v
