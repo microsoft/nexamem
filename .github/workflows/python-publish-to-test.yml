@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
     - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
         # Run all unit tests
         python -m pytest tests/ -v
     - name: Run tests with coverage
-      if: matrix.python-version == '3.11'  # Only run coverage on one Python version
+      if: matrix.python-version == '3.10'  # Only run coverage on one Python version
       run: |
         python -m pytest tests/ --cov=nexamem --cov-report=xml --cov-report=term-missing
 

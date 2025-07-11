@@ -1,9 +1,10 @@
 """
 Policy engine for AIMemory with TTL, encryption, quota, and PII enforcement.
 """
-from typing import Optional, Dict, Any
-import time
 import re
+import time
+from typing import Any, Dict, Optional, Union
+
 from .channels import ChannelConfig
 
 
@@ -153,7 +154,7 @@ class PolicyEngine:
     
     def validate_write(
         self,
-        content: str | bytes,
+        content: Union[str, bytes],
         channel_config: ChannelConfig,
         scope_dict: Dict[str, str],
         *,

@@ -1,9 +1,9 @@
 """
 Content processor chain for redaction and enrichment.
 """
-from typing import Any, Dict, List, Optional, Protocol
 import logging
 import re
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ContentProcessor(Protocol):
     """Protocol for content processors."""
     
-    def process(self, content: str, metadata: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    def process(self, content: str, metadata: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """
         Process content and return modified content and updated metadata.
         
@@ -37,7 +37,7 @@ class PIIRedactor:
             'credit_card': re.compile(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b')
         }
     
-    def process(self, content: str, metadata: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    def process(self, content: str, metadata: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """Redact PII from content."""
         processed_content = content
         detected_pii = []
@@ -59,7 +59,7 @@ class PIIRedactor:
 class ContentEnricher:
     """Basic content enrichment processor."""
     
-    def process(self, content: str, metadata: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    def process(self, content: str, metadata: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """Enrich content with metadata."""
         metadata = metadata.copy()
         metadata['content_length'] = len(content)
@@ -81,7 +81,7 @@ class ContentProcessorChain:
         self.processors.append(processor)
         self.enabled = True
     
-    def process(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[str, Dict[str, Any]]:
+    def process(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> Tuple[str, Dict[str, Any]]:
         """
         Process content through the entire chain.
         

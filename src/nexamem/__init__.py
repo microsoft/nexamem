@@ -9,7 +9,7 @@ from .audit import AuditSink, AsyncAuditSink
 from . import metrics
 
 # Version information
-__version__ = "0.3.4"
+__version__ = "0.3.5.dev2"
 
 __all__ = [
     # Version

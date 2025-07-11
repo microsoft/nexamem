@@ -1,11 +1,11 @@
 """
 Metrics collection for AIMemory operations.
 """
-import time
-from typing import Dict, Optional
-from collections import defaultdict, deque
-import threading
 import logging
+import threading
+import time
+from collections import defaultdict, deque
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class MetricsCollector:
             "max": max(values)
         }
     
-    def get_all_metrics(self) -> Dict[str, any]:
+    def get_all_metrics(self) -> Dict[str, Any]:
         """Get all collected metrics."""
         with self._lock:
             metrics = {
