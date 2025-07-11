@@ -1,7 +1,7 @@
 """New AIMemory implementation using dependency injection."""
 
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .config.aimemory import AIMemoryConfig
 from .di import DIContainer, ServiceProvider
@@ -213,7 +213,7 @@ class AIMemory:
         max_bytes: Optional[int] = None,
         max_msgs: Optional[int] = None,
         max_tokens: Optional[int] = None
-    ) -> tuple[List[str], Dict[str, Any]]:
+    ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Read messages from a memory channel (legacy API compatibility).
         
@@ -431,7 +431,7 @@ class AsyncAIMemory:
         max_bytes: Optional[int] = None,
         max_msgs: Optional[int] = None,
         max_tokens: Optional[int] = None
-    ) -> tuple[List[str], Dict[str, Any]]:
+    ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Read messages from a memory channel (legacy API compatibility).
         
