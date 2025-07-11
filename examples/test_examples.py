@@ -161,6 +161,51 @@ def test_default_channels():
         print(f"❌ Default channels validation failed: {e}")
 
 
+def test_new_message_properties():
+    """Test the new message properties functionality."""
+    print("\n🆕 Testing New Message Properties...")
+    
+    from nexamem import initialize, ChatHistory
+    
+    # Test with memory storage
+    initialize({"history_storage": "memory"})
+    
+    history = ChatHistory()
+    
+    # Test session context
+    history.set_session_context(
+        agent_id="test_agent",
+        user_id="test_user",
+        env="test"
+    )
+    
+    # Add messages with new properties
+    history.add_user_message("Test message", tokens=5)
+    history.add_assistant_message("Test response", tokens=10, 
+                                 data='{"confidence": 0.95}')
+    
+    messages = history.get_history()
+    
+    # Validate new properties
+    for msg in messages:
+        assert "agent_id" in msg, "Missing agent_id"
+        assert "user_id" in msg, "Missing user_id"
+        assert "session_id" in msg, "Missing session_id"
+        assert "env" in msg, "Missing env"
+        assert "timestamp" in msg, "Missing timestamp"
+        assert "tokens" in msg, "Missing tokens"
+        assert "data" in msg, "Missing data"
+        
+        assert msg["agent_id"] == "test_agent", f"Expected test_agent, got {msg['agent_id']}"
+        assert msg["user_id"] == "test_user", f"Expected test_user, got {msg['user_id']}"
+        assert msg["env"] == "test", f"Expected test, got {msg['env']}"
+    
+    print("✅ New message properties working correctly")
+    print(f"   - All {len(messages)} messages have required properties")
+    print(f"   - Session context applied correctly")
+    print(f"   - Tokens tracked: {sum(msg['tokens'] for msg in messages)}")
+
+
 def main():
     print("🚀 AIMemory Examples Validation Test")
     print("=" * 50)
@@ -168,6 +213,8 @@ def main():
     test_schema_validation()
     test_aimemory_integration()
     test_default_channels()
+    test_new_message_properties()
+    test_new_message_properties()
     
     print("\n" + "=" * 50)
     print("🎉 Examples validation completed!")
