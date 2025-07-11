@@ -18,8 +18,12 @@ A Python library providing governed, Redis-backed conversational memory for AI c
 
 ### Legacy ChatHistory API
 - Store, retrieve, and manage chatbot conversation history
-- Multiple storage backends: Memory, File, SQLite, and Redis
-- Simple API for integration with LLM-based chatbots
+- **Enhanced message properties** aligned with AIMemory requirements
+- Support for agent tracking, session management, token counting, and custom metadata
+- Multiple storage backends: Memory, File, SQLite
+- Advanced SQLite querying capabilities
+- Session context management and convenience methods
+- Full backward compatibility with existing code
 
 ## Installation
 
@@ -366,162 +370,254 @@ asyncio.run(main())
 
 ## Legacy ChatHistory API
 
-The original simple API is still supported for backward compatibility:
+The original simple API is still supported for backward compatibility and now includes enhanced message properties aligned with AIMemory requirements:
+
+### Enhanced Message Properties
+
+All messages now support these additional properties:
+
+- **`agent_id`** - String identifier for the agent (default: empty string)
+- **`user_id`** - String identifier for the user (default: empty string)  
+- **`session_id`** - Auto-generated UUID for the session (automatically created if not provided)
+- **`env`** - Environment identifier (default: "prod")
+- **`timestamp`** - ISO datetime string of when the message was recorded (auto-generated)
+- **`tokens`** - Number of tokens used by the LLM (default: 0)
+- **`data`** - JSON string for additional custom data (default: empty string)
+
+### Basic Usage
 
 ```python
-from nexamem import initialize, get_config, ChatHistory
+from nexamem import initialize, ChatHistory
 
 # Initialize with your preferred storage
 initialize({
-    "history_storage": "memory",  # or "file", "sqlite", "redis"
+    "history_storage": "memory",  # or "file", "sqlite"
     "debug": True
 })
 
 history = ChatHistory()
+
+# Simple usage (backward compatible)
 history.add_message('user', 'Hello!')
-history.add_message('bot', 'Hi! How can I help you?')
-print(history.get_history())
+history.add_message('assistant', 'Hi! How can I help you?')
+
+# Enhanced usage with new properties
+history.add_message(
+    'assistant', 
+    'Your portfolio is performing well.',
+    agent_id="portfolio_agent",
+    user_id="customer_123",
+    tokens=15,
+    data='{"confidence": 0.92, "risk_level": "moderate"}'
+)
+
+# View all messages with enhanced properties
+messages = history.get_history()
+for msg in messages:
+    print(f"Role: {msg['role']}")
+    print(f"Content: {msg['content']}")
+    print(f"Agent: {msg['agent_id']}")
+    print(f"Tokens: {msg['tokens']}")
+    print(f"Timestamp: {msg['timestamp']}")
 ```
 
-## Architecture
+### Session Context Management
 
-```
-Caller → AIMemory Facade
-         │
-         ▼
- PolicyEngine  (TTL / quota / PII)
- ContentProcessor chain (redact / enrich)  [optional]
-         │
-         ▼
- RedisAdapter  (sync / async)
-         │
-         ▼
-Azure Cache for Redis
-```
-
-**Key Components:**
-- **MemoryScope**: Defines access control with agent_id, user_id, session_id, env
-- **ChannelManager**: Loads and manages channel configurations
-- **PolicyEngine**: Enforces TTL, encryption, quota, and PII policies
-- **RedisAdapter**: Handles Redis operations with proper key structure
-- **AuditSink**: (Future) Mirrors operations to Redis Stream for compliance
-
-## Production Setup
-
-### Azure Redis Cache
+Set default context that applies to all future messages:
 
 ```python
-from nexamem import AIMemory, MemoryScope
+# Set session context (applies to all future messages)
+history.set_session_context(
+    agent_id="investment_advisor",
+    user_id="customer_789",
+    env="prod"
+)
 
-# Production configuration
-memory = AIMemory(
-    redis_host="your-cache.redis.cache.windows.net",
-    redis_port=6380,  # Azure Redis SSL port
-    redis_password="your-access-key",
-    redis_ssl=True,
-    channels_yaml="/app/config/channels.yaml"
+# Convenience methods that automatically apply context
+history.add_user_message("What's my portfolio performance?", tokens=8)
+history.add_assistant_message("Your portfolio gained 12% this year.", tokens=14)
+history.add_system_message("Analysis completed", tokens=0)
+```
+
+### Storage Backends
+
+All storage backends support the enhanced properties:
+
+#### Memory Storage
+```python
+initialize({"history_storage": "memory"})
+```
+
+#### File Storage (JSON)
+```python
+initialize({
+    "history_storage": "file",
+    "file_path": "conversation_history.json"
+})
+```
+
+#### SQLite Database
+```python
+initialize({
+    "history_storage": "sqlite", 
+    "sqlite_path": "conversations.db"
+})
+
+# SQLite includes advanced querying
+history = ChatHistory()
+# Query by agent
+agent_messages = history.query_sqlite("agent_id = ?", ("portfolio_agent",))
+# Query by token count
+high_token_msgs = history.query_sqlite("tokens > ?", (10,))
+```
+
+### Message Return Format
+
+Each message returned by `get_history()` now includes:
+
+```python
+{
+    "role": "assistant",                                    # Original
+    "content": "Your portfolio gained 12% this year.",      # Original  
+    "agent_id": "investment_advisor",                       # NEW
+    "user_id": "customer_789",                              # NEW
+    "session_id": "c6c191e1-2bc7-4b7b-b08e-d27c7bc210d2",  # NEW (auto-generated)
+    "env": "prod",                                          # NEW
+    "timestamp": "2025-07-11T08:54:07.728806",              # NEW (auto-generated)
+    "tokens": 14,                                           # NEW
+    "data": '{"confidence": 0.92}'                          # NEW (JSON string)
+}
+```
+
+### Legacy Compatibility
+
+Existing code continues to work unchanged:
+
+```python
+# This still works exactly as before
+history.add_message('user', 'Hello!')
+history.add_message('bot', 'Hi there!')
+messages = history.get_history()
+
+# But now each message also includes the new properties with defaults
+assert messages[0]['agent_id'] == ""        # Default empty
+assert messages[0]['env'] == "prod"         # Default environment  
+assert messages[0]['tokens'] == 0           # Default no tokens
+assert 'session_id' in messages[0]          # Auto-generated
+assert 'timestamp' in messages[0]           # Auto-generated
+```
+
+## ChatHistory Enhancement Migration
+
+The ChatHistory API has been enhanced with new message properties while maintaining full backward compatibility.
+
+### Automatic Enhancement
+
+**Existing code works unchanged** - new properties are automatically added with sensible defaults:
+
+```python
+# Your existing code
+history.add_message('user', 'Hello')
+history.add_message('assistant', 'Hi there!')
+
+# Now automatically includes:
+# - agent_id: "" (empty default)
+# - user_id: "" (empty default)  
+# - session_id: auto-generated UUID
+# - env: "prod" (default environment)
+# - timestamp: current ISO datetime
+# - tokens: 0 (default)
+# - data: "" (empty default)
+```
+
+### Database Migration
+
+**SQLite databases are automatically migrated:**
+- Existing databases get new columns added automatically
+- No data loss - existing messages preserved
+- New columns populated with appropriate defaults
+
+```python
+# Works with existing SQLite databases
+initialize({
+    "history_storage": "sqlite",
+    "sqlite_path": "existing_database.db"  # Automatically migrated
+})
+```
+
+### Gradual Enhancement
+
+**Adopt new features incrementally:**
+
+```python
+# Step 1: Keep existing calls, get new properties automatically
+history.add_message('user', 'Hello')
+
+# Step 2: Add session context for consistency  
+history.set_session_context(
+    agent_id="customer_service",
+    user_id="customer_123"
+)
+
+# Step 3: Use convenience methods
+history.add_user_message("I need help", tokens=5)
+history.add_assistant_message("How can I help?", tokens=7)
+
+# Step 4: Add custom metadata as needed
+history.add_assistant_message(
+    "Based on your account history...",
+    tokens=25,
+    data='{"confidence": 0.95, "sources": ["account_db", "transaction_log"]}'
 )
 ```
 
-### Channel Configuration Best Practices
+### Enhanced Analytics
 
-```yaml
-# Production channels.yaml
-channels:
-  working:
-    ttl_sec: 14400    # 4 hours - active conversation
-    encrypt: true     # PII protection
-    quota_bytes: 5000000  # 5MB per user per day
+**Leverage new properties for insights:**
 
-  long_term:
-    ttl_sec: 2592000  # 30 days - important context
-    encrypt: true
-    quota_bytes: 50000000  # 50MB per user per day
+```python
+messages = history.get_history()
 
-  routing:
-    ttl_sec: 86400    # 24 hours - classifier hints
-    encrypt: false    # No PII, faster access
-    quota_bytes: 1000000  # 1MB per user per day
+# Token usage analytics
+total_tokens = sum(msg['tokens'] for msg in messages)
+user_tokens = sum(msg['tokens'] for msg in messages if msg['role'] == 'user')
+assistant_tokens = sum(msg['tokens'] for msg in messages if msg['role'] == 'assistant')
 
-  audit:
-    ttl_sec: 31536000  # 365 days - compliance
-    encrypt: true
-    quota_bytes: 100000000  # 100MB per user per day
+print(f"Total conversation tokens: {total_tokens}")
+print(f"User tokens: {user_tokens}, Assistant tokens: {assistant_tokens}")
+
+# Agent analytics (if using multiple agents)
+agents = {msg['agent_id'] for msg in messages if msg['agent_id']}
+print(f"Agents involved: {', '.join(agents)}")
+
+# Session tracking
+session_id = messages[0]['session_id'] if messages else None
+print(f"Session ID: {session_id}")
 ```
 
-## API Reference
+### SQLite Querying
 
-### Core Classes
+**Use advanced queries with new properties:**
 
-#### AIMemory
-- `write(scope, channel, content, *, pii=False, ttl_override=None, auto_pii=False) -> str`
-- `read(scope, channel, *, since_sec=None, max_bytes=None, max_msgs=None, max_tokens=None) -> (list, dict)`
-- `checkpoint(scope, key, payload) -> None`
-- `checkpoint_atomic(scope, key, update_fn) -> dict`
-- `bulk_erase(scope) -> int`
-- `count_bytes(scope, channel) -> int`
-- `register_channel(name, *, ttl_sec, encrypt, quota_bytes=None) -> None`
+```python
+# Find messages by specific agent
+agent_messages = history.query_sqlite(
+    "agent_id = ? AND tokens > ?", 
+    ("portfolio_advisor", 10)
+)
 
-#### MemoryScope
-- `MemoryScope(agent_id, user_id, session_id=None, env="prod")`
-- `get_key_prefix(channel) -> str`
-- `get_index_key(channel) -> str`
+# Find recent high-token interactions
+recent_complex = history.query_sqlite(
+    "timestamp > ? AND tokens > ?",
+    ("2025-07-01T00:00:00", 20)  
+)
 
-#### AsyncAIMemory
-Same API as AIMemory but with `async`/`await` for all operations.
-
-### Policy Exceptions
-- `PolicyViolation`: Base policy exception
-- `QuotaExceeded`: Daily quota limit reached
-- `EncryptionRequired`: PII content needs encrypted channel
-- `TTLViolation`: TTL override exceeds channel limit
-
-## Examples
-
-See the `examples/` directory for complete usage examples:
-- `aimemory_demo.py` - Comprehensive AIMemory demonstration
-- `azure_redis_example.py` - Azure Redis Cache integration
-- `channels_config_example.py` - Channel configuration examples
-
-## Testing
-
-```sh
-# Run all tests
-pytest
-
-# Run specific test modules
-pytest tests/test_aimemory.py
-pytest tests/test_channels.py
-pytest tests/test_policy.py
-
-# Run with coverage
-pytest --cov=nexamem tests/
+# Find messages with custom data
+custom_data_messages = history.query_sqlite(
+    "data != ''",
+    ()
+)
 ```
-
-## Development
-
-1. Clone the repository:
-   ```sh
-   git clone https://github.com/microsoft/nexamem.git
-   cd nexamem
-   ```
-
-2. Create virtual environment:
-   ```sh
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. Install development dependencies:
-   ```sh
-   pip install -e .
-   pip install -r requirements.txt
-   ```
-
-4. Run tests:
-   ```sh
-   pytest
-   ```
 
 ## Migration Guide
 
