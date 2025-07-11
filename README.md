@@ -2,6 +2,13 @@
 
 A Python library providing governed, Redis-backed conversational memory for AI components. Designed for easy integration with AI agents, orchestrators, and chatbot systems.
 
+## 📖 Quick Navigation
+
+**New to NexaMem?** → [Quick Start - AIMemory](#quick-start---aimemory-recommended)  
+**Want Azure Redis?** → [Azure Redis Ready](#-azure-redis-ready) | [Quick Start with Azure Redis](#quick-start-with-azure-redis)  
+**Using Legacy API?** → [Legacy ChatHistory API](#legacy-chathistory-api)  
+**Need Azure Redis docs?** → [Azure Redis Integration Guide](AZURE_REDIS.md)
+
 ## Features
 
 ### AIMemory API (Recommended) - v0.3
@@ -20,8 +27,9 @@ A Python library providing governed, Redis-backed conversational memory for AI c
 - Store, retrieve, and manage chatbot conversation history
 - **Enhanced message properties** aligned with AIMemory requirements
 - Support for agent tracking, session management, token counting, and custom metadata
-- Multiple storage backends: Memory, File, SQLite
-- Advanced SQLite querying capabilities
+- Multiple storage backends: Memory, File, SQLite, **Redis (including Azure Cache for Redis)**
+- **🚀 Azure Redis integration** with access key and Entra ID authentication
+- Advanced SQLite and Redis querying capabilities with pattern matching
 - Session context management and convenience methods
 - Full backward compatibility with existing code
 
@@ -40,6 +48,18 @@ pip install -i https://test.pypi.org/simple/ nexamem
 pip install git+https://github.com/microsoft/nexamem.git
 uv add git+https://github.com/microsoft/nexamem.git  
 ```
+
+## 🔥 Azure Redis Ready
+
+NexaMem includes **first-class support for Azure Cache for Redis** with enterprise security features:
+
+- **🚀 Quick Setup**: Connect with just hostname + access key  
+- **🔐 Enterprise Auth**: Full Azure Entra ID (Azure AD) integration
+- **⚡ High Performance**: Sub-millisecond latency, automatic scaling
+- **🛡️ Security**: VNet integration, encryption at rest/transit, compliance-ready
+- **📊 Advanced Querying**: Pattern-based message search and analytics
+
+**Ready to use Azure Redis?** See our [Quick Start with Azure Redis](#quick-start-with-azure-redis) section below or check the comprehensive [Azure Redis Integration Guide](AZURE_REDIS.md) for advanced configurations.
 
 ## Quick Start - AIMemory (Recommended)
 
@@ -421,6 +441,57 @@ for msg in messages:
     print(f"Timestamp: {msg['timestamp']}")
 ```
 
+### Quick Start with Azure Redis
+
+For production applications, Azure Cache for Redis provides enterprise-grade performance and security:
+
+```python
+from nexamem import initialize, ChatHistory
+
+# Azure Redis with access key (simplest setup)
+initialize({
+    "history_storage": "redis",
+    "redis_config": {
+        "azure_hostname": "your-cache.redis.cache.windows.net",
+        "azure_access_key": "your_primary_access_key",
+        "ssl": True
+    }
+})
+
+history = ChatHistory()
+
+# Set session context for organized conversation tracking
+history.set_session_context(
+    agent_id="customer_support",
+    user_id="customer_12345",
+    env="prod"
+)
+
+# Add messages with automatic token counting and metadata
+history.add_user_message("I need help with my account", tokens=8)
+history.add_assistant_message(
+    "I'd be happy to help! What specific issue are you experiencing?", 
+    tokens=15,
+    data='{"intent": "support_request", "confidence": 0.95}'
+)
+
+# Retrieve conversation history with all enhanced properties
+messages = history.get_history()
+print(f"Retrieved {len(messages)} messages from Azure Redis")
+
+# Advanced querying: find all messages for this user across sessions
+user_messages = history.query_redis("*customer_12345*", limit=100)
+print(f"Found {len(user_messages)} total messages for this customer")
+```
+
+**Why Azure Redis?**
+- ⚡ **Ultra-fast**: Sub-millisecond response times
+- 🔒 **Enterprise Security**: Azure AD integration, VNet support, encryption
+- 📈 **Scalable**: Automatic scaling and clustering
+- 🛡️ **Reliable**: 99.9% SLA with built-in backup and geo-replication
+
+> 💡 **Getting Started**: You can set up Azure Cache for Redis in minutes through the Azure Portal. Just grab your hostname and access key, and you're ready to go!
+
 ### Session Context Management
 
 Set default context that applies to all future messages:
@@ -441,12 +512,18 @@ history.add_system_message("Analysis completed", tokens=0)
 
 ### Storage Backends
 
+Choose the storage backend that best fits your application needs. All backends support the enhanced message properties and provide consistent APIs.
+
+**🏆 Recommended**: Redis (including Azure Cache for Redis) for production applications requiring high performance, scalability, and enterprise features.
+
 All storage backends support the enhanced properties:
 
 #### Memory Storage
 ```python
 initialize({"history_storage": "memory"})
 ```
+**Best for**: Development, testing, temporary sessions  
+**Features**: Lightning-fast, no persistence, simple setup
 
 #### File Storage (JSON)
 ```python
@@ -455,6 +532,8 @@ initialize({
     "file_path": "conversation_history.json"
 })
 ```
+**Best for**: Small applications, simple persistence, single-user scenarios  
+**Features**: Human-readable JSON, easy debugging, file-based backup
 
 #### SQLite Database
 ```python
@@ -470,6 +549,78 @@ agent_messages = history.query_sqlite("agent_id = ?", ("portfolio_agent",))
 # Query by token count
 high_token_msgs = history.query_sqlite("tokens > ?", (10,))
 ```
+**Best for**: Desktop applications, moderate data volumes, complex queries  
+**Features**: ACID transactions, SQL queries, embedded database
+
+#### Redis Storage (including Azure Cache for Redis)
+
+Redis provides high-performance, scalable storage with enterprise-grade features including clustering, persistence, and security. Azure Cache for Redis is fully supported with multiple authentication methods.
+
+```python
+# Standard Redis (self-hosted)
+initialize({
+    "history_storage": "redis",
+    "redis_config": {
+        "host": "localhost",
+        "port": 6379,
+        "password": "your_password"  # Optional
+    }
+})
+
+# Azure Cache for Redis - Access Key (Recommended for getting started)
+initialize({
+    "history_storage": "redis",
+    "redis_config": {
+        "azure_hostname": "your-cache.redis.cache.windows.net",
+        "azure_access_key": "your_primary_or_secondary_access_key",
+        "ssl": True,  # Required for Azure Redis
+        "db": 0       # Optional: database number (default: 0)
+    }
+})
+
+# Azure Cache for Redis - Entra ID (Enterprise security)
+initialize({
+    "history_storage": "redis",
+    "redis_config": {
+        "azure_hostname": "your-cache.redis.cache.windows.net",
+        "use_azure_entra_id": True,
+        "azure_username": "your_entra_id_username",
+        "ssl": True
+    }
+})
+
+# Redis includes powerful pattern-based querying
+history = ChatHistory()
+# Find all messages for a specific user
+user_messages = history.query_redis("*user_123*", limit=50)
+# Find messages by session
+session_messages = history.query_redis("*session_abc*", limit=100)
+```
+
+**Best for**: 🏆 **Production applications, multi-user systems, enterprise deployments**  
+**Features**: High performance, horizontal scaling, enterprise security, advanced querying, clustering support
+
+**Perfect for**:
+- High-traffic chatbots and AI agents
+- Multi-tenant applications  
+- Enterprise applications requiring Azure integration
+- Applications needing sub-millisecond response times
+- Systems requiring advanced security and compliance
+
+**🚀 Quick Start with Azure Redis:**
+
+1. **Get your Azure Redis connection details** from the Azure Portal
+2. **Choose authentication method**: Access Key (simple) or Entra ID (enterprise)
+3. **Use the config above** with your hostname and credentials
+4. **Start storing conversations** - no additional setup required!
+
+**🔐 Azure Redis Benefits:**
+- **Enterprise Security**: Built-in encryption, VNet integration, Azure AD authentication
+- **High Availability**: 99.9% SLA with automatic failover and geo-replication options
+- **Performance**: Sub-millisecond latency with built-in caching and clustering
+- **Compliance**: SOC, ISO, HIPAA, and other enterprise compliance certifications
+
+> **📚 Advanced Azure Redis Usage**: For comprehensive configuration options including Azure Key Vault integration, service principal authentication, connection pooling, and troubleshooting, see our [**Azure Redis Integration Guide**](AZURE_REDIS.md).
 
 ### Message Return Format
 
@@ -675,6 +826,48 @@ See example configurations:
 - [`channels.yaml`](channels.yaml) - Default configuration with full documentation
 - [`examples/valid_channels.yaml`](examples/valid_channels.yaml) - Extended valid example
 - [`examples/invalid_channels.yaml`](examples/invalid_channels.yaml) - Common mistakes to avoid
+
+## Azure Redis Troubleshooting
+
+### Quick Fixes for Common Issues
+
+**Connection Refused / Timeout**
+```python
+# ✅ Ensure SSL is enabled for Azure Redis
+"ssl": True,  # Required for Azure Cache for Redis
+```
+
+**Authentication Failed**
+```python
+# ✅ Verify your access key is correct (Primary or Secondary)
+"azure_access_key": "your-primary-key-from-azure-portal",
+
+# ✅ For Entra ID, ensure your Azure credentials are configured
+# Run: az login  (for development)
+# Or set environment variables for production
+```
+
+**DNS Resolution Issues**
+```python
+# ✅ Use the full Azure hostname
+"azure_hostname": "your-cache.redis.cache.windows.net",  # Include full domain
+```
+
+**Performance Issues**
+```python
+# ✅ Use connection pooling for high-throughput applications
+"redis_config": {
+    "azure_hostname": "your-cache.redis.cache.windows.net",
+    "azure_access_key": "your-key",
+    "ssl": True,
+    "connection_pool_kwargs": {
+        "max_connections": 50,
+        "retry_on_timeout": True
+    }
+}
+```
+
+> 🔧 **Need more help?** Check the comprehensive [Azure Redis Integration Guide](AZURE_REDIS.md) for detailed troubleshooting, security configurations, and performance optimization tips.
 
 ## License
 

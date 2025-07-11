@@ -23,7 +23,7 @@ class Message(BaseModel):
 class ChatHistory:
     """
     Stores and manages NexaMem chatbot conversation history using Pydantic models.
-    Supports in-memory, file, and SQLite storage based on configuration.
+    Supports in-memory, file, SQLite, and Redis storage based on configuration.
     """
     def __init__(self):
         config = get_config()
@@ -32,6 +32,7 @@ class ChatHistory:
         self._storage = config["history_storage"]
         self._debug = config.get("debug", False)
         self._history: List[Message] = []
+        
         if self._storage == "file":
             self._file_path = config["file_path"]
             self._load_from_file()
@@ -40,6 +41,10 @@ class ChatHistory:
             self._init_sqlite()
             self._migrate_sqlite_schema()
             self._load_from_sqlite()
+        elif self._storage == "redis":
+            self._init_redis(config["redis_config"])
+            self._load_from_redis()
+            
         if self._debug:
             print(f"[DEBUG] ChatHistory initialized with storage='{self._storage}'")
 
@@ -60,12 +65,16 @@ class ChatHistory:
             self._save_to_file()
         elif self._storage == "sqlite":
             self._save_to_sqlite(msg)
+        elif self._storage == "redis":
+            self._save_to_redis(msg)
         if self._debug:
             print(f"[DEBUG] Added message: role='{role}' content='{content}' agent_id='{msg.agent_id}' session_id='{msg.session_id}'")
 
     def get_history(self) -> List[Dict[str, str]]:
         if self._storage == "sqlite":
             self._load_from_sqlite()
+        elif self._storage == "redis":
+            self._load_from_redis()
         if self._debug:
             print(f"[DEBUG] get_history called. Returning {len(self._history)} messages.")
         return [msg.model_dump() for msg in self._history]
@@ -76,6 +85,8 @@ class ChatHistory:
             self._save_to_file()
         elif self._storage == "sqlite":
             self._clear_sqlite()
+        elif self._storage == "redis":
+            self._clear_redis()
         if self._debug:
             print("[DEBUG] Cleared history.")
 
@@ -286,4 +297,157 @@ class ChatHistory:
         } for row in cursor]
         if self._debug:
             print(f"[DEBUG] query_sqlite returned {len(results)} messages with where='{where}' and params={params}")
+        return results
+
+    # --- Redis storage helpers ---
+    def _init_redis(self, redis_config: dict):
+        """Initialize Redis connection for chat history storage."""
+        from .redis_adapter import RedisAdapter
+        
+        # Map configuration parameters
+        config_kwargs = {}
+        
+        # Handle Azure vs standard Redis configuration
+        if 'azure_hostname' in redis_config:
+            # Azure Redis configuration
+            config_kwargs.update({
+                'azure_hostname': redis_config['azure_hostname'],
+                'azure_access_key': redis_config.get('azure_access_key'),
+                'use_azure_entra_id': redis_config.get('use_azure_entra_id', False),
+                'azure_username': redis_config.get('azure_username'),
+                'azure_client_id': redis_config.get('azure_client_id'),
+                'azure_client_secret': redis_config.get('azure_client_secret'),
+                'azure_tenant_id': redis_config.get('azure_tenant_id'),
+                'azure_keyvault_url': redis_config.get('azure_keyvault_url'),
+                'azure_secret_name': redis_config.get('azure_secret_name'),
+            })
+        else:
+            # Standard Redis configuration
+            config_kwargs.update({
+                'host': redis_config.get('host', redis_config.get('hostname', 'localhost')),
+                'port': redis_config.get('port', 6379),
+                'password': redis_config.get('password'),
+                'ssl': redis_config.get('ssl', False),
+            })
+        
+        # Common parameters
+        config_kwargs.update({
+            'db': redis_config.get('db', 0),
+            'use_fakeredis': redis_config.get('use_fakeredis', False),
+        })
+        
+        # Add any additional kwargs
+        for key, value in redis_config.items():
+            if key not in config_kwargs:
+                config_kwargs[key] = value
+        
+        self._redis = RedisAdapter(**config_kwargs)
+        self._redis_key_prefix = redis_config.get('key_prefix', 'nexamem:chat_history')
+        
+        if self._debug:
+            print(f"[DEBUG] Initialized Redis connection: {self._redis.get_info()}")
+
+    def _save_to_redis(self, msg: Message):
+        """Save a message to Redis."""
+        message_data = msg.model_dump()
+        message_key = f"{self._redis_key_prefix}:{uuid.uuid4()}"
+        
+        # Store message with TTL (default 30 days)
+        ttl_seconds = 30 * 24 * 60 * 60
+        self._redis.client.setex(message_key, ttl_seconds, json.dumps(message_data))
+        
+        # Add to sorted set for ordering by timestamp
+        timestamp_score = int(datetime.fromisoformat(msg.timestamp.replace('Z', '+00:00')).timestamp())
+        index_key = f"{self._redis_key_prefix}:index"
+        self._redis.client.zadd(index_key, {message_key: timestamp_score})
+        self._redis.client.expire(index_key, ttl_seconds)
+        
+        if self._debug:
+            print(f"[DEBUG] Saved message to Redis: {message_key}")
+
+    def _load_from_redis(self):
+        """Load messages from Redis."""
+        self._history = []
+        index_key = f"{self._redis_key_prefix}:index"
+        
+        # Get all message keys ordered by timestamp
+        message_keys = self._redis.client.zrange(index_key, 0, -1)
+        
+        for message_key in message_keys:
+            message_data = self._redis.client.get(message_key)
+            if message_data is None:
+                # Message expired, remove from index
+                self._redis.client.zrem(index_key, message_key)
+                continue
+            
+            try:
+                data = json.loads(message_data)
+                message = Message(**data)
+                self._history.append(message)
+            except (json.JSONDecodeError, ValueError) as e:
+                if self._debug:
+                    print(f"[DEBUG] Error loading message {message_key}: {e}")
+                # Remove invalid message from index
+                self._redis.client.zrem(index_key, message_key)
+                continue
+        
+        if self._debug:
+            print(f"[DEBUG] Loaded {len(self._history)} messages from Redis")
+
+    def _clear_redis(self):
+        """Clear all messages from Redis."""
+        index_key = f"{self._redis_key_prefix}:index"
+        
+        # Get all message keys and delete them
+        message_keys = self._redis.client.zrange(index_key, 0, -1)
+        if message_keys:
+            self._redis.client.delete(*message_keys)
+        
+        # Delete the index
+        self._redis.client.delete(index_key)
+        
+        self._history = []
+        if self._debug:
+            print("[DEBUG] Cleared Redis chat history")
+
+    def query_redis(self, pattern: str = "*", limit: int = 100) -> List[Dict[str, str]]:
+        """
+        Query Redis chat history with pattern matching.
+        
+        Args:
+            pattern: Key pattern to match (Redis glob style)
+            limit: Maximum number of messages to return
+            
+        Returns:
+            List of matching messages as dictionaries
+            
+        Raises:
+            ConfigError: If not using Redis storage
+        """
+        if self._storage != "redis":
+            raise ConfigError("query_redis is only available when using Redis storage.")
+        
+        # Search for keys matching pattern
+        search_pattern = f"{self._redis_key_prefix}:{pattern}"
+        keys = self._redis.client.keys(search_pattern)
+        
+        # Limit results
+        keys = keys[:limit]
+        
+        results = []
+        for key in keys:
+            message_data = self._redis.client.get(key)
+            if message_data:
+                try:
+                    data = json.loads(message_data)
+                    results.append(data)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Sort by timestamp
+        results.sort(key=lambda x: x.get('timestamp', ''))
+        
+        if self._debug:
+            print(f"[DEBUG] query_redis returned {len(results)} messages with pattern='{pattern}'")
+        
         return results
