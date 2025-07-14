@@ -1,3 +1,4 @@
+# isort: skip_file
 # Legacy API imports (deprecated - will be removed in future version)
 from .history import ChatHistory
 from .config import initialize, get_config
@@ -17,7 +18,7 @@ from .di import DIContainer, ServiceRegistry, ServiceProvider
 from .storage import StorageFactory, create_storage_from_config
 
 # Version information
-__version__ = "0.4.0"
+__version__ = "0.4.2"
 
 __all__ = [
     # Version
