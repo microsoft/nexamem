@@ -5,3 +5,5 @@
 - All code should be compatible with Python 3.8+.
 - Use clear, concise docstrings and type hints.
 - Write tests in the `tests/` directory using pytest.
+- Run Pytest before committing changes to ensure all tests pass.
+- Create a `whl` file for distribution when ready.
