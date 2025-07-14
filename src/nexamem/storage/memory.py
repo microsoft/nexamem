@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from .base import BaseAsyncStorage, BaseStorage
@@ -36,8 +36,8 @@ class MemoryStorage(BaseStorage):
                 'content': content,
                 'metadata': metadata or {},
                 'scope': scope,
-                'created_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
             self._data.memories[memory_id] = memory_data
@@ -52,7 +52,7 @@ class MemoryStorage(BaseStorage):
             self._data.audit_log.append({
                 'memory_id': memory_id,
                 'action': 'store',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'scope': scope
             })
 
@@ -86,7 +86,7 @@ class MemoryStorage(BaseStorage):
             self._data.audit_log.append({
                 'memory_id': memory_id,
                 'action': 'delete',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'scope': scope
             })
 

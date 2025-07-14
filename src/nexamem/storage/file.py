@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -94,8 +94,8 @@ class FileStorage(BaseStorage):
                 'content': content,
                 'metadata': metadata or {},
                 'scope': scope,
-                'created_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
 
             memory_file = self._get_memory_file(memory_id)
@@ -109,7 +109,7 @@ class FileStorage(BaseStorage):
             self._append_audit_entry({
                 'memory_id': memory_id,
                 'action': 'store',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'scope': scope
             })
 
@@ -143,7 +143,7 @@ class FileStorage(BaseStorage):
             self._append_audit_entry({
                 'memory_id': memory_id,
                 'action': 'delete',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'scope': scope
             })
 

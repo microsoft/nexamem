@@ -3,7 +3,7 @@
 import asyncio
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -75,7 +75,7 @@ class SQLiteStorage(BaseStorage):
         """Store memory in SQLite database."""
         try:
             metadata_json = json.dumps(metadata or {})
-            timestamp = datetime.utcnow().isoformat()
+            timestamp = datetime.now(timezone.utc).isoformat()
 
             with sqlite3.connect(self.database_path) as conn:
                 # Store or update memory
