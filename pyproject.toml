@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.4.0"
+version = "0.4.2"
 description = "NexaMem/AIMemory - Complete enterprise-grade Redis-backed conversational memory with built-in governance, Azure integration, content processing, and audit capabilities. Everything included - no extras needed!"
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }
@@ -20,7 +20,7 @@ dependencies = [
     "pydantic>=2.0,<3.0",
     
     # Redis dependencies (with async support)
-    "redis[asyncio]>=5.0.0,<6.0",
+    "redis>=5.0.0,<6.0",
     # Pin fakeredis to 2.21.0 for Python 3.8 compatibility
     # (newer versions use type annotations incompatible with Python 3.8)
     "fakeredis==2.21.0",
@@ -230,21 +230,22 @@ exclude_lines = [
 
 # UV package manager configuration
 [tool.uv]
-# UV-specific configurations for faster dependency resolution
+# Updated development dependencies (matches project.optional-dependencies.dev)
 dev-dependencies = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0"
+    "pytest>=7.0.0,<9.0",
+    "pytest-asyncio>=0.23.0,<2.0",
+    "pytest-cov>=4.0.0,<7.0",
+    "black>=23.0.0,<25.0",
+    "mypy>=1.0.0,<2.0",
+    "ruff>=0.1.0,<1.0",
+    "pre-commit>=3.0.0,<4.0"
 ]
 
-# UV workspace configuration for monorepo support
-[tool.uv.workspace]
-members = [".", "examples/*"]
+# Constraint dependencies for consistent resolution
+constraint-dependencies = [
+    "fakeredis==2.21.0"  # Pin for Python 3.8 compatibility
+]
 
-# UV sources for faster resolution
-[tool.uv.sources]
-# Example: Use specific commit or branch if needed
-# nexamem = { git = "https://github.com/microsoft/nexamem.git", branch = "main" }
+# UV workspace configuration - removed examples since it doesn't have pyproject.toml
+[tool.uv.workspace]
+members = ["."]
