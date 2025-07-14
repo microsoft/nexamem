@@ -1,0 +1,9 @@
+
+channels:
+  general:
+    ttl_sec: 86400  # 24 hours
+    encrypt: false
+
+  customer_support:
+    ttl_sec: 604800  # 7 days
+    encrypt: false
