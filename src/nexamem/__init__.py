@@ -17,7 +17,7 @@ from .di import DIContainer, ServiceRegistry, ServiceProvider
 from .storage import StorageFactory, create_storage_from_config
 
 # Version information
-__version__ = "0.4.0.dev15"
+__version__ = "0.4.0.dev16"
 
 __all__ = [
     # Version
