@@ -1,5 +1,8 @@
 """
 Configuration management for NexaMem library.
+
+⚠️  DEPRECATED: This module is deprecated and will be removed in a future version.
+Please migrate to the new AIMemoryConfig API. See LEGACY_API.md for migration guidance.
 """
 from typing import Any, Dict, Optional
 
@@ -13,6 +16,9 @@ def initialize(config: Dict[str, Any]) -> None:
     """
     Initialize the NexaMem library with the given configuration.
     This function must be called before using any other functionality.
+    
+    ⚠️  DEPRECATED: This function is deprecated and will be removed in a future version.
+    Please migrate to the new AIMemoryConfig API. See LEGACY_API.md for migration guidance.
 
     Args:
         config (Dict[str, Any]): Configuration dictionary. Must include:
@@ -78,6 +84,9 @@ def initialize(config: Dict[str, Any]) -> None:
 def get_config() -> Optional[Dict[str, Any]]:
     """
     Get the current configuration.
+    
+    ⚠️  DEPRECATED: This function is deprecated and will be removed in a future version.
+    Please migrate to the new AIMemoryConfig API. See LEGACY_API.md for migration guidance.
 
     Returns:
         Optional[Dict[str, Any]]: The configuration dictionary if initialized, else None.

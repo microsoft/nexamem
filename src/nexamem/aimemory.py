@@ -1,5 +1,8 @@
 """
 Main AIMemory class implementing the requirements specification.
+
+⚠️  DEPRECATED: This module is deprecated and will be removed in a future version.
+Please migrate to the new DI-based AIMemory API. See LEGACY_API.md for migration guidance.
 """
 import time
 from typing import List, Dict, Optional, Tuple, Union, Callable, Any
@@ -27,6 +30,9 @@ class AIMemory:
     """
     Main AIMemory facade implementing Redis-backed conversational memory.
     Provides governed memory with channels, policies, and scope-based access.
+    
+    ⚠️  DEPRECATED: This class is deprecated and will be removed in a future version.
+    Please migrate to the new DI-based AIMemory API. See LEGACY_API.md for migration guidance.
     """
     
     def __init__(
@@ -226,6 +232,7 @@ class AIMemory:
                 raise ChannelNotFound(f"Channel '{channel}' not found")
             
             # TODO: Implement token-based truncation when max_tokens is specified
+            # NOTE: This is legacy code - new API handles this differently
             if max_tokens is not None:
                 # For MVP, ignore max_tokens and add to metadata
                 pass
@@ -398,6 +405,9 @@ class AIMemory:
 class AsyncAIMemory:
     """
     Asynchronous version of AIMemory for high-throughput scenarios.
+    
+    ⚠️  DEPRECATED: This class is deprecated and will be removed in a future version.
+    Please migrate to the new DI-based AsyncAIMemory API. See LEGACY_API.md for migration guidance.
     """
     
     def __init__(

@@ -1,3 +1,4 @@
+# Legacy API imports (deprecated - will be removed in future version)
 from .history import ChatHistory
 from .config import initialize, get_config
 from .aimemory import AIMemory as LegacyAIMemory, AsyncAIMemory as LegacyAsyncAIMemory
@@ -16,18 +17,18 @@ from .di import DIContainer, ServiceRegistry, ServiceProvider
 from .storage import StorageFactory, create_storage_from_config
 
 # Version information
-__version__ = "0.3.5.dev2"
+__version__ = "0.4.0.dev14"
 
 __all__ = [
     # Version
     "__version__",
-    # Legacy API (backward compatibility)
+    # Legacy API (deprecated - will be removed in future version)
     "ChatHistory",
     "initialize",
     "get_config",
     "LegacyAIMemory",
     "LegacyAsyncAIMemory",
-    # New DI-based AIMemory API
+    # New DI-based AIMemory API (recommended)
     "AIMemory",
     "AsyncAIMemory",
     "create_aimemory",

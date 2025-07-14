@@ -1,3 +1,9 @@
+"""
+Chat history management for NexaMem library.
+
+⚠️  DEPRECATED: This module is deprecated and will be removed in a future version.
+Please migrate to the new AIMemory API. See LEGACY_API.md for migration guidance.
+"""
 import json
 import os
 import sqlite3
@@ -24,6 +30,9 @@ class ChatHistory:
     """
     Stores and manages NexaMem chatbot conversation history using Pydantic models.
     Supports in-memory, file, SQLite, and Redis storage based on configuration.
+    
+    ⚠️  DEPRECATED: This class is deprecated and will be removed in a future version.
+    Please migrate to the new AIMemory API. See LEGACY_API.md for migration guidance.
     """
     def __init__(self):
         config = get_config()

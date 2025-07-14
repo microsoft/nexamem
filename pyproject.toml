@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.4.0.dev12"
+version = "0.4.0.dev14"
 description = "NexaMem/AIMemory - Complete enterprise-grade Redis-backed conversational memory with built-in governance, Azure integration, content processing, and audit capabilities. Everything included - no extras needed!"
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }
