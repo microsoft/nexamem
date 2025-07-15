@@ -12,7 +12,6 @@ class AIMemory:
     def __init__(self, channel_factory: ChannelFactory):
         # initialize this with a Ichannelfactory and do DI stuff with the factory stuff
 
-        # self.channel_factory = channel_factory
         #TODO: figure out how to get the yaml file location
         # channel_factory = ChannelFactory()
         self._channels: list[Channel] = channel_factory.load_from_yaml("path/to/your/config.yaml")
@@ -25,7 +24,6 @@ class AIMemory:
         Static method to create an instance of AIMemory.
         This can be used to initialize the AIMemory with a specific configuration.
         """
-        #config object is a object not simple type
 
         if not container:
             container = Container()
@@ -45,7 +43,6 @@ class AIMemory:
         # wire up DI dependencies if needed
         # check if stuff is already registered in the container
         # if not, register the necessary components
-        #register errrythang
 
         return container
 
