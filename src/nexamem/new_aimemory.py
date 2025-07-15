@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from .config.aimemory import AIMemoryConfig
 from .di import DIContainer, ServiceProvider
 from .storage import BaseAsyncStorage, BaseStorage, StorageFactory
-from .channels import ChannelManager, ChannelConfig
+from .channels.channels import ChannelManager, ChannelConfig
 from .memory_scope import MemoryScope
 
 

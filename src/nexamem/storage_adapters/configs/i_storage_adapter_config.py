@@ -1,16 +1,17 @@
+from typing import Any
+
+
 class IStorageAdapterConfig:
     """
     Interface for storage adapter configuration.
     """
+    def __init__(self, **kwargs: Any):
+        """
+        Initialize the storage adapter configuration with given parameters.
 
-    def get_storage_type(self) -> str:
+        :param kwargs: Configuration parameters for the storage adapter.
         """
-        Returns the type of storage (e.g., 'local', 's3', etc.).
-        """
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        # for key, value in kwargs.items():
+        #     setattr(self, key, value)
 
-    def get_connection_details(self) -> dict:
-        """
-        Returns connection details required to connect to the storage.
-        """
         raise NotImplementedError("This method should be overridden by subclasses.")

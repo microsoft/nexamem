@@ -1,8 +1,9 @@
 from abc import abstractmethod
 from typing import Protocol
 
+from nexamem.schemas.memory_filter import MemoryFilter
 from nexamem.schemas.memory_scope import MemoryScope
-from nexamem.schemas.storage_record import StorageRecord
+from nexamem.schemas.memory_entry import MemoryEntry
 from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
 
 
@@ -22,7 +23,7 @@ class IStorageAdapter(Protocol):
     
 
     @abstractmethod
-    def write(self, data: str | bytes, memory_scope: MemoryScope, channel:str) -> str:
+    async def write(self, entries: list[MemoryEntry]) -> None:
         """
         Create a new data entry at the specified path.
 
@@ -33,7 +34,7 @@ class IStorageAdapter(Protocol):
         raise NotImplementedError("This method should be overridden by subclasses.")
 
     @abstractmethod
-    def read_since(self, since_sec: int, memory_scope: MemoryScope, channel: str) -> list[StorageRecord]:
+    async def read(self, filter: MemoryFilter) -> list[MemoryEntry]:
         """
         Retrieve data from the specified ID.
 
@@ -42,7 +43,7 @@ class IStorageAdapter(Protocol):
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
-    @abstractmethod
-    def read_last_n_records(self, number_of_records: int, memory_scope: MemoryScope, channel: str) -> list[StorageRecord]:
-        raise NotImplementedError(
-            "This method should be overridden by subclasses.")
+    # @abstractmethod
+    # def read_last_n_records(self, number_of_records: int, memory_scope: MemoryScope, channel: str) -> list[MemoryEntry]:
+    #     raise NotImplementedError(
+    #         "This method should be overridden by subclasses.")

@@ -1,46 +1,88 @@
-from nexamem.schemas.memory_scope import MemoryScope
-from nexamem.schemas.storage_record import StorageRecord
-from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
+from collections import defaultdict
+from datetime import datetime
+
+from lagom import Container
+from nexamem.channels.channel import Channel
+from nexamem.channels.channel_factory import ChannelFactory
+from nexamem.schemas.memory_filter import MemoryFilter
+from nexamem.schemas.memory_entry import MemoryEntry
 from nexamem.storage_adapters.i_storage_adapter import IStorageAdapter
 
 class AIMemory:
-    def __init__(self, storage: IStorageAdapter):
-        self._storage = storage
+    def __init__(self, channel_factory: ChannelFactory):
+        # initialize this with a Ichannelfactory and do DI stuff with the factory stuff
+
+        # self.channel_factory = channel_factory
+        #TODO: figure out how to get the yaml file location
+        # channel_factory = ChannelFactory()
+        self._channels: list[Channel] = channel_factory.load_from_yaml("path/to/your/config.yaml")
+
+        # read yaml config file from predetermined location
+
+    @staticmethod
+    def create(container:Container|None = None, config_object = None, path_to_config: str|None = None) -> 'AIMemory':
+        """
+        Static method to create an instance of AIMemory.
+        This can be used to initialize the AIMemory with a specific configuration.
+        """
+        #config object is a object not simple type
+
+        if not container:
+            container = Container()
+
+        container = AIMemory.register_deps(container)
 
 
-    def write(self, scope: MemoryScope, channel: str,
-              content: str | bytes, *,
-              pii: bool = False,
-              ttl_override: int | None = None,
-              auto_pii: bool = False) -> str:
-        
-        if pii:
-            # encrypt PII content
-            content = f"PII: {content}"
-                    
-        # add memory scope metadata to content
-        created_id = self._storage.write(content, memory_scope=scope, channel=channel)
-        return created_id
+        if not path_to_config:
+            raise ValueError("Path to configuration file must be provided.")
 
-    def read(self, scope: MemoryScope, channel: str, *,
-             since_sec: int | None = None,
-             max_msgs: int | None = None) -> list[StorageRecord]:
+
+        return container[AIMemory]
+    
+    @staticmethod
+    def register_deps(container: Container) -> Container:
+
+        # wire up DI dependencies if needed
+        # check if stuff is already registered in the container
+        # if not, register the necessary components
+        #register errrythang
+
+        return container
+
+
+    async def write(self, entries: list[MemoryEntry]) -> None:
         
-        records: list[StorageRecord] = []
-        if since_sec is not None:
-            records = self._storage.read_since(since_sec, memory_scope=scope, channel=channel)
+        # loop the entries and write each one, handle pii, ttl etc as needed
+        # group by channel and write in batches (pipelining)
+
+        grouped_entries: defaultdict[str,list[MemoryEntry]] = defaultdict(list)
+        for entry in entries:
+            grouped_entries[entry.channel_name].append(entry)
+
+        for channel_name, entries in grouped_entries.items():
+            channel = next(
+                (c for c in self._channels if c.name == channel_name), None)
+            if not channel:
+                raise ValueError(f"Channel '{channel_name}' not found. Please register the channel first.")
+            
+            #TODO: implement logic to handle PII, TTL, etc.
+
+            storage: IStorageAdapter = channel.storage
+
+            await storage.write(entries)
+            
+           
+    async def read(self, filter: MemoryFilter) -> list[MemoryEntry]:
         
-        if max_msgs is not None:
-            # Read the last N records
-            return self._storage.read_last_n_records(max_msgs, memory_scope=scope, channel=channel)
+        records: list[MemoryEntry] = []
+        for channel_name in filter.channel_names:
+            channel = next((c for c in self._channels if c.name == channel_name), None)
+            if not channel:
+                raise ValueError(f"Channel '{channel_name}' not found. Please register the channel first.")
+            storage: IStorageAdapter = channel.storage
+            entries = await storage.read(filter)
+            records.extend(entries)
         
         return records
 
-    # def checkpoint(self, scope: MemoryScope, key: str, payload: dict) -> None
-
-    # def checkpoint_atomic(self, scope: MemoryScope, key: str,
-    #                       update_fn: Callable[[dict | None], dict]) -> dict
-
-    # def bulk_erase(self, scope: MemoryScope) -> int
-    # def count_bytes(self, scope: MemoryScope, channel: str) -> int
-    # def register_channel(self, name: str, *, ttl_sec: int, encrypt: bool, quota_bytes: int | None = None) -> None
+    # def register_channel(self, name: str, *, ttl_sec: int, encrypt: bool, quota_bytes: int | None = None, storage: IStorageAdapter) -> None

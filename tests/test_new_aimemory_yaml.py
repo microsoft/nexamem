@@ -5,7 +5,7 @@ import os
 import pytest
 
 from nexamem import AIMemory, AIMemoryConfig, AsyncAIMemory, StorageConfig, MemoryScope
-from nexamem.channels import ChannelAlreadyExists
+from nexamem.channels.channels import ChannelAlreadyExists
 
 
 class TestNewAIMemoryYAMLSupport:

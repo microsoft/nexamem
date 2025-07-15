@@ -8,7 +8,7 @@ import time
 from typing import List, Dict, Optional, Tuple, Union, Callable, Any
 
 from .memory_scope import MemoryScope
-from .channels import ChannelManager, ChannelConfig
+from .channels.channels import ChannelManager, ChannelConfig
 from .policy import PolicyEngine
 from .redis_adapter import RedisAdapter, AsyncRedisAdapter
 from .content_processor import ContentProcessorChain

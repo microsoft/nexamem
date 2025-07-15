@@ -1,6 +1,8 @@
-class MemoryScope:
-    def __init__(self, agent_id: str, user_id: str, session_id: str, env:str):
-        self.agent_id = agent_id
-        self.user_id = user_id
-        self.session_id = session_id
-        self.env = env
+from pydantic import BaseModel, Field
+
+
+class MemoryScope(BaseModel):
+    agent_id: str = Field(..., description="ID of the agent.")
+    user_id: str = Field(..., description="ID of the user.")
+    session_id: str = Field(..., description="ID of the session.")
+    env: str = Field(..., description="Environment identifier.")

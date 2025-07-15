@@ -5,7 +5,7 @@ import re
 import time
 from typing import Any, Dict, Optional, Union
 
-from .channels import ChannelConfig
+from .channels.channels import ChannelConfig
 
 
 class PolicyViolation(Exception):
