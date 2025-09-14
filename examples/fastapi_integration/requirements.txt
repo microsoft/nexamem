@@ -1,0 +1,21 @@
+# FastAPI Integration Example Requirements
+
+# NexaMem (will be installed from the parent directory)
+# Install with: pip install -e ../..
+
+# FastAPI for the web framework
+fastapi>=0.104.0
+
+# Uvicorn for ASGI server
+uvicorn[standard]>=0.24.0
+
+# Pydantic for data validation (included with FastAPI but being explicit)
+pydantic>=2.5.0
+
+# Optional: For production deployment
+gunicorn>=21.0.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For testing async HTTP client
