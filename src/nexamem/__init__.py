@@ -17,16 +17,6 @@ from .config.storage import StorageConfig, AzureRedisConfig, MemoryConfig, FileC
 from .di import DIContainer, ServiceRegistry, ServiceProvider
 from .storage import StorageFactory, create_storage_from_config
 
-# Service factory for external integration
-from .service_factory import (
-    MemoryServiceFactory, 
-    ConversationMemoryAdapter,
-    IConversationMemory,
-    create_conversation_memory,
-    create_from_environment,
-    create_ai_memory
-)
-
 # Version information
 __version__ = "0.4.2"
 
@@ -53,13 +43,6 @@ __all__ = [
     "ServiceRegistry",
     "ServiceProvider",
     "StorageFactory",
-    # Service factory (for external integration)
-    "MemoryServiceFactory",
-    "ConversationMemoryAdapter", 
-    "IConversationMemory",
-    "create_conversation_memory",
-    "create_from_environment", 
-    "create_ai_memory",
     # Existing components
     "MemoryScope",
     "ChannelConfig",
