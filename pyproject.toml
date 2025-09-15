@@ -18,16 +18,13 @@ requires-python = ">=3.8"
 dependencies = [
     # Core dependencies
     "pydantic>=2.0,<3.0",
-    
     # Redis dependencies (with async support)
-    "redis>=5.0.0,<6.0",
+    "redis>=6.0.0",
     # Pin fakeredis to 2.21.0 for Python 3.8 compatibility
     # (newer versions use type annotations incompatible with Python 3.8)
     "fakeredis==2.21.0",
-    
     # YAML configuration support
     "PyYAML>=6.0,<7.0",
-    
     # Azure identity for Entra ID authentication
     "azure-identity>=1.15.0,<2.0",
     "azure-keyvault-secrets>=4.7.0,<5.0",
