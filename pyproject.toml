@@ -227,7 +227,8 @@ dev-dependencies = [
     "black>=23.0.0,<25.0",
     "mypy>=1.0.0,<2.0",
     "ruff>=0.1.0,<1.0",
-    "pre-commit>=3.0.0,<4.0"
+    "pre-commit>=3.0.0,<4.0",
+    "nexamem[dev]",
 ]
 
 # Constraint dependencies for consistent resolution
@@ -238,3 +239,6 @@ constraint-dependencies = [
 # UV workspace configuration - removed examples since it doesn't have pyproject.toml
 [tool.uv.workspace]
 members = ["."]
+
+[tool.uv.sources]
+nexamem = { workspace = true }

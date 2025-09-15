@@ -14,5 +14,8 @@ ruff>=0.1.0,<1.0
 # Development utilities
 pre-commit>=3.0.0,<4.0
 
+# Redis testing 
+fakeredis>=2.10.0,<3.0
+
 # Include production dependencies
 -r requirements.txt
