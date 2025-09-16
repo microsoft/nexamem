@@ -396,6 +396,68 @@ class MemoryServiceFactory:
         return MemoryServiceFactory.create_conversation_memory(storage_config, async_preferred)
     
     @staticmethod
+    def create_azure_cosmos_conversation_memory(
+        endpoint: str,
+        account_key: str,
+        database_name: str,
+        async_preferred: bool = True,
+        **kwargs
+    ) -> Union[ConversationMemoryAdapter, AsyncConversationMemoryAdapter]:
+        """Create conversation memory with Azure Cosmos DB backend."""
+        from ..config.storage import StorageConfig, AzureCosmosConfig, AzureAuthMethod
+        
+        cosmos_config = AzureCosmosConfig(
+            endpoint=endpoint,
+            database_name=database_name,
+            account_key=account_key,
+            auth_method=AzureAuthMethod.ACCESS_KEY,
+            **kwargs
+        )
+        storage_config = StorageConfig.azure_cosmos(cosmos_config)
+        
+        return MemoryServiceFactory.create_conversation_memory(storage_config, async_preferred)
+    
+    @staticmethod
+    def create_azure_blob_conversation_memory(
+        account_name: str,
+        account_key: str,
+        async_preferred: bool = True,
+        **kwargs
+    ) -> Union[ConversationMemoryAdapter, AsyncConversationMemoryAdapter]:
+        """Create conversation memory with Azure Blob Storage backend."""
+        from ..config.storage import StorageConfig, AzureBlobConfig, AzureAuthMethod
+        
+        blob_config = AzureBlobConfig(
+            account_name=account_name,
+            account_key=account_key,
+            auth_method=AzureAuthMethod.ACCESS_KEY,
+            **kwargs
+        )
+        storage_config = StorageConfig.azure_blob(blob_config)
+        
+        return MemoryServiceFactory.create_conversation_memory(storage_config, async_preferred)
+    
+    @staticmethod
+    def create_azure_ai_search_conversation_memory(
+        endpoint: str,
+        api_key: str,
+        async_preferred: bool = True,
+        **kwargs
+    ) -> Union[ConversationMemoryAdapter, AsyncConversationMemoryAdapter]:
+        """Create conversation memory with Azure AI Search backend."""
+        from ..config.storage import StorageConfig, AzureAISearchConfig, AzureAuthMethod
+        
+        search_config = AzureAISearchConfig(
+            endpoint=endpoint,
+            api_key=api_key,
+            auth_method=AzureAuthMethod.ACCESS_KEY,
+            **kwargs
+        )
+        storage_config = StorageConfig.azure_ai_search(search_config)
+        
+        return MemoryServiceFactory.create_conversation_memory(storage_config, async_preferred)
+    
+    @staticmethod
     def create_from_env(async_preferred: bool = True) -> Union[ConversationMemoryAdapter, AsyncConversationMemoryAdapter]:
         """Create conversation memory from environment variables."""
         from ..config.storage import StorageConfig
@@ -429,6 +491,12 @@ def create_memory_service(
     
     if storage_type == "azure_redis":
         return MemoryServiceFactory.create_azure_redis_conversation_memory(async_preferred=async_preferred, **config_kwargs)
+    elif storage_type == "azure_cosmos":
+        return MemoryServiceFactory.create_azure_cosmos_conversation_memory(async_preferred=async_preferred, **config_kwargs)
+    elif storage_type == "azure_blob":
+        return MemoryServiceFactory.create_azure_blob_conversation_memory(async_preferred=async_preferred, **config_kwargs)
+    elif storage_type == "azure_ai_search":
+        return MemoryServiceFactory.create_azure_ai_search_conversation_memory(async_preferred=async_preferred, **config_kwargs)
     elif storage_type == "memory":
         storage_config = StorageConfig.memory()
         return MemoryServiceFactory.create_conversation_memory(storage_config, async_preferred)

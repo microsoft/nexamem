@@ -1,10 +1,20 @@
 """Storage abstraction module for NexaMem.
 
 This module provides a unified interface for different storage backends
-including Azure Redis, in-memory, file-based, and SQLite storage.
+including Azure Redis, Azure Cosmos DB, Azure Blob Storage, Azure AI Search,
+in-memory, file-based, and SQLite storage.
 """
 
 from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage, AzureRedisConnectionError, AzureRedisHealthCheck
+from .azure_cosmos import AsyncAzureCosmosStorage, AzureCosmosStorage, AzureCosmosConnectionError, AzureCosmosHealthCheck
+from .azure_blob import AsyncAzureBlobStorage, AzureBlobStorage, AzureBlobConnectionError, AzureBlobHealthCheck
+from .azure_ai_search import (
+    AsyncAzureAISearchStorage, AzureAISearchConnectionError, AzureAISearchHealthCheck,
+    EmbeddingProvider, AsyncEmbeddingProvider,
+    OpenAIEmbeddingProvider, AsyncOpenAIEmbeddingProvider,
+    AzureOpenAIEmbeddingProvider, AsyncAzureOpenAIEmbeddingProvider,
+    CustomEmbeddingProvider, AsyncCustomEmbeddingProvider
+)
 from .azure_redis_factory import (
     AzureRedisStorageFactory, 
     create_azure_redis_storage, 
@@ -53,6 +63,33 @@ __all__ = [
     "AsyncAzureRedisStorage", 
     "AzureRedisConnectionError",
     "AzureRedisHealthCheck",
+    
+    # Azure Cosmos DB implementations
+    "AzureCosmosStorage",
+    "AsyncAzureCosmosStorage",
+    "AzureCosmosConnectionError", 
+    "AzureCosmosHealthCheck",
+    
+    # Azure Blob Storage implementations
+    "AzureBlobStorage",
+    "AsyncAzureBlobStorage",
+    "AzureBlobConnectionError",
+    "AzureBlobHealthCheck",
+    
+    # Azure AI Search implementations
+    "AsyncAzureAISearchStorage",
+    "AzureAISearchConnectionError",
+    "AzureAISearchHealthCheck",
+    
+    # Embedding providers for AI Search
+    "EmbeddingProvider",
+    "AsyncEmbeddingProvider",
+    "OpenAIEmbeddingProvider",
+    "AsyncOpenAIEmbeddingProvider", 
+    "AzureOpenAIEmbeddingProvider",
+    "AsyncAzureOpenAIEmbeddingProvider",
+    "CustomEmbeddingProvider",
+    "AsyncCustomEmbeddingProvider",
     
     # Azure Redis factory and auth providers
     "AzureRedisStorageFactory",

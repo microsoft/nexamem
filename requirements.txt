@@ -12,6 +12,18 @@ PyYAML>=6.0,<7.0
 azure-identity>=1.15.0,<2.0
 azure-keyvault-secrets>=4.7.0,<5.0
 
+# Azure Cosmos DB
+azure-cosmos>=4.3.0,<5.0
+
+# Azure Blob Storage
+azure-storage-blob>=12.19.0,<13.0
+
+# Azure AI Search
+azure-search-documents>=11.4.0,<12.0
+
+# OpenAI for embeddings (optional, for AI Search)
+openai>=1.0.0,<2.0
+
 # Build system
 setuptools>=61.0
 build>=0.10.0
