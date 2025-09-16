@@ -4,27 +4,83 @@ This module provides a unified interface for different storage backends
 including Azure Redis, in-memory, file-based, and SQLite storage.
 """
 
-from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage
+from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage, AzureRedisConnectionError, AzureRedisHealthCheck
+from .azure_redis_factory import (
+    AzureRedisStorageFactory, 
+    create_azure_redis_storage, 
+    create_from_env,
+    AuthenticationProvider,
+    AsyncAuthenticationProvider,
+    AccessKeyAuthProvider,
+    AsyncAccessKeyAuthProvider,
+    EntraIdAuthProvider,
+    AsyncEntraIdAuthProvider,
+    KeyVaultAuthProvider,
+    AsyncKeyVaultAuthProvider
+)
 from .base import BaseAsyncStorage, BaseStorage
 from .factory import StorageFactory, create_storage_from_config
 from .file import AsyncFileStorage, FileStorage
+from .interfaces import (
+    IConversationMemory,
+    IAsyncConversationMemory,
+    ConversationMemoryAdapter,
+    AsyncConversationMemoryAdapter,
+    MemoryServiceFactory,
+    create_memory_service,
+    create_from_environment
+)
 from .memory import AsyncMemoryStorage, MemoryStorage
 from .sqlite import AsyncSQLiteStorage, SQLiteStorage
+
+# Legacy aliases for backward compatibility
+StorageAdapter = BaseStorage
+AsyncStorageAdapter = BaseAsyncStorage
 
 __all__ = [
     # Base interfaces
     "BaseStorage",
     "BaseAsyncStorage",
-    # Storage implementations
+    "StorageAdapter",  # Legacy alias
+    "AsyncStorageAdapter",  # Legacy alias
+    
+    # Storage factory
+    "StorageFactory",
+    "create_storage_from_config",
+    
+    # Azure Redis implementations
     "AzureRedisStorage",
-    "AsyncAzureRedisStorage",
+    "AsyncAzureRedisStorage", 
+    "AzureRedisConnectionError",
+    "AzureRedisHealthCheck",
+    
+    # Azure Redis factory and auth providers
+    "AzureRedisStorageFactory",
+    "create_azure_redis_storage",
+    "create_from_env",
+    "AuthenticationProvider",
+    "AsyncAuthenticationProvider",
+    "AccessKeyAuthProvider",
+    "AsyncAccessKeyAuthProvider", 
+    "EntraIdAuthProvider",
+    "AsyncEntraIdAuthProvider",
+    "KeyVaultAuthProvider",
+    "AsyncKeyVaultAuthProvider",
+    
+    # High-level interfaces for external projects
+    "IConversationMemory",
+    "IAsyncConversationMemory",
+    "ConversationMemoryAdapter",
+    "AsyncConversationMemoryAdapter",
+    "MemoryServiceFactory",
+    "create_memory_service",  # 3-line integration
+    "create_from_environment",
+    
+    # Other storage implementations
     "MemoryStorage",
     "AsyncMemoryStorage",
     "FileStorage",
     "AsyncFileStorage",
     "SQLiteStorage",
     "AsyncSQLiteStorage",
-    # Factory
-    "StorageFactory",
-    "create_storage_from_config",
 ]

@@ -3,17 +3,23 @@ Azure Cache for Redis storage implementation.
 Provides both sync and async storage adapters with enterprise features.
 """
 
+import asyncio
 import json
+import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     import redis
     import redis.asyncio as redis_async
+    from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 except ImportError:
     redis = None
     redis_async = None
+    RedisConnectionError = Exception
+    RedisTimeoutError = Exception
 
 try:
     from azure.identity import DefaultAzureCredential, ClientSecretCredential
@@ -35,9 +41,69 @@ from ..memory_scope import MemoryScope
 from .base import BaseStorage, BaseAsyncStorage
 
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
 class AzureRedisConnectionError(Exception):
     """Raised when Azure Redis connection fails."""
     pass
+
+
+class AzureRedisHealthCheck:
+    """Health check utilities for Azure Redis connections."""
+    
+    @staticmethod
+    async def async_health_check(client: redis_async.Redis) -> Dict[str, Any]:
+        """Perform comprehensive async health check."""
+        try:
+            start_time = time.time()
+            ping_result = await client.ping()
+            latency = (time.time() - start_time) * 1000  # Convert to ms
+            
+            info = await client.info()
+            return {
+                "status": "healthy",
+                "ping": ping_result,
+                "latency_ms": round(latency, 2),
+                "connected_clients": info.get("connected_clients", 0),
+                "used_memory": info.get("used_memory", 0),
+                "used_memory_human": info.get("used_memory_human", "unknown"),
+                "redis_version": info.get("redis_version", "unknown"),
+                "uptime_in_seconds": info.get("uptime_in_seconds", 0)
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+    
+    @staticmethod
+    def sync_health_check(client: redis.Redis) -> Dict[str, Any]:
+        """Perform comprehensive sync health check."""
+        try:
+            start_time = time.time()
+            ping_result = client.ping()
+            latency = (time.time() - start_time) * 1000  # Convert to ms
+            
+            info = client.info()
+            return {
+                "status": "healthy",
+                "ping": ping_result,
+                "latency_ms": round(latency, 2),
+                "connected_clients": info.get("connected_clients", 0),
+                "used_memory": info.get("used_memory", 0),
+                "used_memory_human": info.get("used_memory_human", "unknown"),
+                "redis_version": info.get("redis_version", "unknown"),
+                "uptime_in_seconds": info.get("uptime_in_seconds", 0)
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
 
 
 class AzureRedisCollections:
@@ -252,82 +318,155 @@ class AzureRedisCollections:
 
 
 class AsyncAzureRedisStorage(BaseAsyncStorage):
-    """Async Azure Cache for Redis storage adapter."""
+    """Async Azure Cache for Redis storage adapter with production features."""
 
     def __init__(self, config: AzureRedisConfig):
         self.config = config
         self._client: Optional[redis_async.Redis] = None
         self._collections: Optional[AzureRedisCollections] = None
         self._connection_pool: Optional[redis_async.ConnectionPool] = None
+        self._connection_lock = asyncio.Lock()
+        self._last_health_check = 0
+        self._health_check_interval = 60  # seconds
 
     async def _get_auth_token(self) -> str:
-        """Get authentication token based on configured method."""
-        if self.config.auth_method == AzureAuthMethod.ACCESS_KEY:
-            if not self.config.access_key:
-                raise AzureRedisConnectionError("Access key required for ACCESS_KEY auth method")
-            return self.config.access_key
+        """Get authentication token based on configured method with retry logic."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.config.auth_method == AzureAuthMethod.ACCESS_KEY:
+                    if not self.config.access_key:
+                        raise AzureRedisConnectionError("Access key required for ACCESS_KEY auth method")
+                    return self.config.access_key
 
-        elif self.config.auth_method == AzureAuthMethod.ENTRA_ID:
-            if not AsyncDefaultAzureCredential:
-                raise ImportError("azure-identity package required for Entra ID auth")
+                elif self.config.auth_method == AzureAuthMethod.ENTRA_ID:
+                    if not AsyncDefaultAzureCredential:
+                        raise ImportError("azure-identity package required for Entra ID auth")
 
-            # Use Azure Identity for token
-            credential = AsyncDefaultAzureCredential()
-            token = await credential.get_token("https://redis.azure.com/.default")
-            return token.token
+                    # Use Azure Identity for token
+                    credential = AsyncDefaultAzureCredential()
+                    token = await credential.get_token("https://redis.azure.com/.default")
+                    return token.token
 
-        elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
-            if not AsyncSecretClient or not AsyncDefaultAzureCredential:
-                raise ImportError("azure-keyvault-secrets and azure-identity packages required for Key Vault auth")
+                elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
+                    if not AsyncSecretClient or not AsyncDefaultAzureCredential:
+                        raise ImportError("azure-keyvault-secrets and azure-identity packages required for Key Vault auth")
 
-            # Get secret from Key Vault
-            credential = AsyncDefaultAzureCredential()
-            secret_client = AsyncSecretClient(
-                vault_url=self.config.keyvault_url,
-                credential=credential
-            )
-            secret = await secret_client.get_secret(self.config.secret_name)
-            return secret.value
+                    # Get secret from Key Vault
+                    credential = AsyncDefaultAzureCredential()
+                    secret_client = AsyncSecretClient(
+                        vault_url=self.config.keyvault_url,
+                        credential=credential
+                    )
+                    secret = await secret_client.get_secret(self.config.secret_name)
+                    return secret.value
 
-        else:
-            raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
+                else:
+                    raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
 
-    async def connect(self) -> None:
-        """Establish connection to Azure Cache for Redis."""
-        if self._client:
+            except Exception as e:
+                logger.warning(f"Auth attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise AzureRedisConnectionError(f"Failed to get auth token after {max_retries} attempts: {e}")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+    async def _ensure_connection(self) -> None:
+        """Ensure connection with automatic reconnection."""
+        if self._client and await self._test_connection():
             return
 
+        async with self._connection_lock:
+            # Double-check after acquiring lock
+            if self._client and await self._test_connection():
+                return
+            
+            await self._connect_with_retry()
+
+    async def _test_connection(self) -> bool:
+        """Test if current connection is alive."""
+        try:
+            if not self._client:
+                return False
+            await self._client.ping()
+            return True
+        except Exception:
+            return False
+
+    async def _connect_with_retry(self) -> None:
+        """Connect with retry logic and exponential backoff."""
+        max_retries = self.config.max_connections if hasattr(self.config, 'max_retries') else 3
+        
+        for attempt in range(max_retries):
+            try:
+                await self._establish_connection()
+                logger.info("Successfully connected to Azure Redis")
+                return
+            except Exception as e:
+                logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise AzureRedisConnectionError(f"Failed to connect after {max_retries} attempts: {e}")
+                await asyncio.sleep(min(2 ** attempt, 10))  # Cap at 10 seconds
+
+    async def _establish_connection(self) -> None:
+        """Establish the actual Redis connection."""
         if not redis_async:
             raise ImportError("redis[asyncio] package required for async operations")
 
+        # Get authentication token
+        password = await self._get_auth_token()
+
+        # Close existing connection if any
+        if self._client:
+            try:
+                await self._client.aclose()
+            except Exception:
+                pass
+
+        # Create connection pool for better performance
+        self._connection_pool = redis_async.ConnectionPool(
+            host=self.config.hostname,
+            port=self.config.port,
+            password=password,
+            ssl=self.config.ssl,
+            ssl_cert_reqs=None,  # Required for Azure Redis
+            db=self.config.db,
+            socket_connect_timeout=self.config.socket_connect_timeout,
+            socket_timeout=self.config.socket_timeout,
+            decode_responses=True,
+            max_connections=self.config.max_connections,
+            retry_on_timeout=self.config.retry_on_timeout
+        )
+
+        # Create Redis client from pool
+        self._client = redis_async.Redis(connection_pool=self._connection_pool)
+
+        self._collections = AzureRedisCollections(
+            self._client,
+            self.config.collection_prefix
+        )
+
+        # Test connection
+        await self._client.ping()
+
+    async def connect(self) -> None:
+        """Establish connection to Azure Cache for Redis."""
+        await self._ensure_connection()
+
+    @asynccontextmanager
+    async def _redis_operation(self):
+        """Context manager for Redis operations with auto-reconnection."""
         try:
-            # Get authentication token
-            password = await self._get_auth_token()
-
-            # Create Redis client directly (no connection pool for Azure SSL)
-            # Azure Redis requires SSL and connection pools have SSL parameter issues
-            self._client = redis_async.Redis(
-                host=self.config.hostname,
-                port=self.config.port,
-                password=password,
-                ssl=self.config.ssl,
-                ssl_cert_reqs=None,  # Required for Azure Redis
-                db=self.config.db,
-                socket_connect_timeout=self.config.socket_connect_timeout,
-                socket_timeout=self.config.socket_timeout,
-                decode_responses=True
-            )
-
-            self._collections = AzureRedisCollections(
-                self._client,
-                self.config.collection_prefix
-            )
-
-            # Test connection
-            await self._client.ping()
-
+            await self._ensure_connection()
+            yield self._client
+        except (RedisConnectionError, RedisTimeoutError, ConnectionError) as e:
+            logger.warning(f"Redis operation failed, attempting reconnection: {e}")
+            # Reset client to force reconnection
+            self._client = None
+            await self._ensure_connection()
+            yield self._client
         except Exception as e:
-            raise AzureRedisConnectionError(f"Failed to connect to Azure Redis: {e}") from e
+            logger.error(f"Unexpected error in Redis operation: {e}")
+            raise
 
     async def write_message(
         self,
@@ -337,21 +476,24 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         ttl_sec: int,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Write message using Azure Redis collections."""
-        await self.connect()
+        """Write message using Azure Redis collections with resilience."""
+        try:
+            async with self._redis_operation():
+                message_data = {
+                    "content": content if isinstance(content, str) else content.decode('utf-8', errors='ignore'),
+                    "metadata": metadata or {}
+                }
 
-        message_data = {
-            "content": content if isinstance(content, str) else content.decode('utf-8', errors='ignore'),
-            "metadata": metadata or {}
-        }
-
-        if self.config.use_collections:
-            return await self._collections.add_message_to_channel_async(
-                scope, channel, message_data, ttl_sec
-            )
-        else:
-            # Fallback to individual keys (legacy compatibility)
-            return await self._write_message_legacy(scope, channel, message_data, ttl_sec)
+                if self.config.use_collections:
+                    return await self._collections.add_message_to_channel_async(
+                        scope, channel, message_data, ttl_sec
+                    )
+                else:
+                    # Fallback to individual keys (legacy compatibility)
+                    return await self._write_message_legacy(scope, channel, message_data, ttl_sec)
+        except Exception as e:
+            logger.error(f"Failed to write message: {e}")
+            raise
 
     async def read_messages(
         self,
@@ -362,16 +504,19 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         max_msgs: Optional[int] = None,
         max_bytes: Optional[int] = None
     ) -> Tuple[List[str], Dict[str, Any]]:
-        """Read messages using Azure Redis collections."""
-        await self.connect()
-
-        if self.config.use_collections:
-            return await self._collections.get_messages_from_channel_async(
-                scope, channel, since_sec, max_msgs, max_bytes
-            )
-        else:
-            # Fallback to legacy key pattern
-            return await self._read_messages_legacy(scope, channel, since_sec, max_msgs, max_bytes)
+        """Read messages using Azure Redis collections with resilience."""
+        try:
+            async with self._redis_operation():
+                if self.config.use_collections:
+                    return await self._collections.get_messages_from_channel_async(
+                        scope, channel, since_sec, max_msgs, max_bytes
+                    )
+                else:
+                    # Fallback to legacy key pattern
+                    return await self._read_messages_legacy(scope, channel, since_sec, max_msgs, max_bytes)
+        except Exception as e:
+            logger.error(f"Failed to read messages: {e}")
+            return [], {"total_messages": 0, "total_bytes": 0, "truncated": False, "error": str(e)}
 
     async def _write_message_legacy(
         self,
@@ -562,90 +707,90 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         metadata: Optional[Dict[str, Any]] = None,
         scope: Optional[str] = None
     ) -> bool:
-        """Store a memory in Azure Redis (async)."""
+        """Store a memory in Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            memory_data = {
-                'content': content,
-                'metadata': metadata or {},
-                'scope': scope,
-                'created_at': time.time(),
-                'updated_at': time.time()
-            }
-            
-            # Store in Redis hash
-            await self._client.hset(
-                f"{self.config.collection_prefix}:memories",
-                memory_id,
-                json.dumps(memory_data)
-            )
-            
-            # Add to scope index if scope provided
-            if scope:
-                await self._client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
-            # Add to audit log
-            audit_entry = {
-                'memory_id': memory_id,
-                'action': 'store',
-                'timestamp': time.time(),
-                'scope': scope
-            }
-            await self._client.xadd(
-                f"{self.config.collection_prefix}:audit",
-                audit_entry
-            )
-            
-            return True
-        except Exception:
+            async with self._redis_operation() as client:
+                memory_data = {
+                    'content': content,
+                    'metadata': metadata or {},
+                    'scope': scope,
+                    'created_at': time.time(),
+                    'updated_at': time.time()
+                }
+                
+                # Store in Redis hash
+                await client.hset(
+                    f"{self.config.collection_prefix}:memories",
+                    memory_id,
+                    json.dumps(memory_data)
+                )
+                
+                # Add to scope index if scope provided
+                if scope:
+                    await client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+                
+                # Add to audit log
+                audit_entry = {
+                    'memory_id': memory_id,
+                    'action': 'store',
+                    'timestamp': time.time(),
+                    'scope': scope
+                }
+                await client.xadd(
+                    f"{self.config.collection_prefix}:audit",
+                    audit_entry
+                )
+                
+                return True
+        except Exception as e:
+            logger.error(f"Failed to store memory {memory_id}: {e}")
             return False
 
     async def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve a memory from Azure Redis (async)."""
+        """Retrieve a memory from Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            data = await self._client.hget(f"{self.config.collection_prefix}:memories", memory_id)
-            if data:
-                return json.loads(data)
-            return None
-        except Exception:
+            async with self._redis_operation() as client:
+                data = await client.hget(f"{self.config.collection_prefix}:memories", memory_id)
+                if data:
+                    return json.loads(data)
+                return None
+        except Exception as e:
+            logger.error(f"Failed to retrieve memory {memory_id}: {e}")
             return None
 
     async def delete_memory(self, memory_id: str) -> bool:
-        """Delete a memory from Azure Redis (async)."""
+        """Delete a memory from Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            # Get memory data first to update scope index
-            memory_data = await self.retrieve_memory(memory_id)
-            if not memory_data:
-                return False
-            
-            scope = memory_data.get('scope')
-            
-            # Remove from main storage
-            deleted = await self._client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
-            
-            # Remove from scope index
-            if scope:
-                await self._client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
-            # Add to audit log
-            audit_entry = {
-                'memory_id': memory_id,
-                'action': 'delete',
-                'timestamp': time.time(),
-                'scope': scope
-            }
-            await self._client.xadd(
-                f"{self.config.collection_prefix}:audit",
-                audit_entry
-            )
-            
-            return deleted > 0
-        except Exception:
+            async with self._redis_operation() as client:
+                # Get memory data first to update scope index
+                memory_data = await self.retrieve_memory(memory_id)
+                if not memory_data:
+                    return False
+                
+                scope = memory_data.get('scope')
+                
+                # Remove from main storage
+                deleted = await client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
+                
+                # Remove from scope index
+                if scope:
+                    await client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
+                
+                # Add to audit log
+                audit_entry = {
+                    'memory_id': memory_id,
+                    'action': 'delete',
+                    'timestamp': time.time(),
+                    'scope': scope
+                }
+                await client.xadd(
+                    f"{self.config.collection_prefix}:audit",
+                    audit_entry
+                )
+                
+                return deleted > 0
+        except Exception as e:
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
             return False
 
     async def list_memories(
@@ -653,22 +798,22 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         scope: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[str]:
-        """List memory IDs from Azure Redis (async)."""
+        """List memory IDs from Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            if scope:
-                # Get memories from scope index
-                memory_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
-            else:
-                # Get all memory IDs
-                memory_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
-            if limit:
-                memory_ids = memory_ids[:limit]
-            
-            return memory_ids
-        except Exception:
+            async with self._redis_operation() as client:
+                if scope:
+                    # Get memories from scope index
+                    memory_ids = list(await client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+                else:
+                    # Get all memory IDs
+                    memory_ids = list(await client.hkeys(f"{self.config.collection_prefix}:memories"))
+                
+                if limit:
+                    memory_ids = memory_ids[:limit]
+                
+                return memory_ids
+        except Exception as e:
+            logger.error(f"Failed to list memories: {e}")
             return []
 
     async def search_memories(
@@ -677,29 +822,29 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         scope: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[str]:
-        """Search memories by content in Azure Redis (async)."""
+        """Search memories by content in Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            # Get candidate memory IDs
-            if scope:
-                candidate_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
-            else:
-                candidate_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
-            matching_ids = []
-            query_lower = query.lower()
-            
-            for memory_id in candidate_ids:
-                memory_data = await self.retrieve_memory(memory_id)
-                if memory_data and query_lower in memory_data.get('content', '').lower():
-                    matching_ids.append(memory_id)
-                    
-                    if limit and len(matching_ids) >= limit:
-                        break
-            
-            return matching_ids
-        except Exception:
+            async with self._redis_operation():
+                # Get candidate memory IDs
+                if scope:
+                    candidate_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
+                else:
+                    candidate_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
+                
+                matching_ids = []
+                query_lower = query.lower()
+                
+                for memory_id in candidate_ids:
+                    memory_data = await self.retrieve_memory(memory_id)
+                    if memory_data and query_lower in memory_data.get('content', '').lower():
+                        matching_ids.append(memory_id)
+                        
+                        if limit and len(matching_ids) >= limit:
+                            break
+                
+                return matching_ids
+        except Exception as e:
+            logger.error(f"Failed to search memories: {e}")
             return []
 
     async def get_audit_log(
@@ -707,72 +852,103 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         memory_id: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Get audit log entries from Azure Redis (async)."""
+        """Get audit log entries from Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            # Read from audit stream
-            stream_name = f"{self.config.collection_prefix}:audit"
-            entries = await self._client.xread({stream_name: 0}, count=limit or 100)
-            
-            audit_entries = []
-            for _stream, messages in entries:
-                for msg_id, fields in messages:
-                    entry = dict(fields)
-                    entry['id'] = msg_id
-                    
-                    # Filter by memory_id if specified
-                    if memory_id is None or entry.get('memory_id') == memory_id:
-                        audit_entries.append(entry)
-            
-            return audit_entries
-        except Exception:
+            async with self._redis_operation() as client:
+                # Read from audit stream
+                stream_name = f"{self.config.collection_prefix}:audit"
+                entries = await client.xread({stream_name: 0}, count=limit or 100)
+                
+                audit_entries = []
+                for _stream, messages in entries:
+                    for msg_id, fields in messages:
+                        entry = dict(fields)
+                        entry['id'] = msg_id
+                        
+                        # Filter by memory_id if specified
+                        if memory_id is None or entry.get('memory_id') == memory_id:
+                            audit_entries.append(entry)
+                
+                return audit_entries
+        except Exception as e:
+            logger.error(f"Failed to get audit log: {e}")
             return []
 
     async def get_stats(self) -> Dict[str, Any]:
-        """Get storage statistics from Azure Redis (async)."""
+        """Get storage statistics from Azure Redis (async) with resilience."""
         try:
-            await self.connect()
-            
-            total_memories = await self._client.hlen(f"{self.config.collection_prefix}:memories")
-            
-            # Count scopes
-            scope_keys = await self._client.keys(f"{self.config.collection_prefix}:scope:*")
-            total_scopes = len(scope_keys)
-            
-            # Count audit entries
-            try:
-                audit_info = await self._client.xinfo_stream(f"{self.config.collection_prefix}:audit")
-                audit_entries = audit_info.get('length', 0)
-            except Exception:
-                audit_entries = 0
-            
-            return {
-                'total_memories': total_memories,
-                'total_scopes': total_scopes,
-                'audit_entries': audit_entries,
-                'storage_type': 'azure_redis_async'
-            }
-        except Exception:
+            async with self._redis_operation() as client:
+                total_memories = await client.hlen(f"{self.config.collection_prefix}:memories")
+                
+                # Count scopes
+                scope_keys = await client.keys(f"{self.config.collection_prefix}:scope:*")
+                total_scopes = len(scope_keys)
+                
+                # Count audit entries
+                try:
+                    audit_info = await client.xinfo_stream(f"{self.config.collection_prefix}:audit")
+                    audit_entries = audit_info.get('length', 0)
+                except Exception:
+                    audit_entries = 0
+                
+                return {
+                    'total_memories': total_memories,
+                    'total_scopes': total_scopes,
+                    'audit_entries': audit_entries,
+                    'storage_type': 'azure_redis_async'
+                }
+        except Exception as e:
+            logger.error(f"Failed to get stats: {e}")
             return {
                 'total_memories': 0,
                 'total_scopes': 0,
                 'audit_entries': 0,
-                'storage_type': 'azure_redis_async'
+                'storage_type': 'azure_redis_async',
+                'error': str(e)
+            }
+
+    async def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status of Azure Redis connection."""
+        try:
+            await self._ensure_connection()
+            return await AzureRedisHealthCheck.async_health_check(self._client)
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
             }
 
     async def ping(self) -> bool:
-        """Test Azure Redis connection."""
+        """Test Azure Redis connection with auto-reconnection."""
         try:
-            if not self._client:
-                await self.connect()
-            return await self._client.ping()
-        except Exception:
+            async with self._redis_operation() as client:
+                return await client.ping()
+        except Exception as e:
+            logger.warning(f"Ping failed: {e}")
             return False
+
+    async def close(self) -> None:
+        """Close Azure Redis connection and cleanup resources."""
+        if self._client:
+            try:
+                await self._client.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing Redis client: {e}")
+            finally:
+                self._client = None
+        
+        if self._connection_pool:
+            try:
+                await self._connection_pool.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing connection pool: {e}")
+            finally:
+                self._connection_pool = None
 
 
 class AzureRedisStorage(BaseStorage):
-    """Sync Azure Cache for Redis storage adapter."""
+    """Sync Azure Cache for Redis storage adapter with production features."""
 
     def __init__(self, config: AzureRedisConfig):
         self.config = config
@@ -780,71 +956,149 @@ class AzureRedisStorage(BaseStorage):
         self._collections: Optional[AzureRedisCollections] = None
 
     def _get_auth_token(self) -> str:
-        """Get authentication token based on configured method."""
-        if self.config.auth_method == AzureAuthMethod.ACCESS_KEY:
-            if not self.config.access_key:
-                raise AzureRedisConnectionError("Access key required for ACCESS_KEY auth method")
-            return self.config.access_key
+        """Get authentication token based on configured method with retry logic."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.config.auth_method == AzureAuthMethod.ACCESS_KEY:
+                    if not self.config.access_key:
+                        raise AzureRedisConnectionError("Access key required for ACCESS_KEY auth method")
+                    return self.config.access_key
 
-        elif self.config.auth_method == AzureAuthMethod.ENTRA_ID:
-            if not DefaultAzureCredential:
-                raise ImportError("azure-identity package required for Entra ID auth")
+                elif self.config.auth_method == AzureAuthMethod.ENTRA_ID:
+                    if not DefaultAzureCredential:
+                        raise ImportError("azure-identity package required for Entra ID auth")
 
-            # Use Azure Identity for token
-            credential = DefaultAzureCredential()
-            token = credential.get_token("https://redis.azure.com/.default")
-            return token.token
+                    # Use Azure Identity for token
+                    credential = DefaultAzureCredential()
+                    token = credential.get_token("https://redis.azure.com/.default")
+                    return token.token
 
-        elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
-            if not SecretClient or not DefaultAzureCredential:
-                raise ImportError("azure-keyvault-secrets and azure-identity packages required for Key Vault auth")
+                elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
+                    if not SecretClient or not DefaultAzureCredential:
+                        raise ImportError("azure-keyvault-secrets and azure-identity packages required for Key Vault auth")
 
-            # Get secret from Key Vault
-            credential = DefaultAzureCredential()
-            secret_client = SecretClient(
-                vault_url=self.config.keyvault_url,
-                credential=credential
-            )
-            secret = secret_client.get_secret(self.config.secret_name)
-            return secret.value
+                    # Get secret from Key Vault
+                    credential = DefaultAzureCredential()
+                    secret_client = SecretClient(
+                        vault_url=self.config.keyvault_url,
+                        credential=credential
+                    )
+                    secret = secret_client.get_secret(self.config.secret_name)
+                    return secret.value
 
-        else:
-            raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
+                else:
+                    raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
 
-    def connect(self) -> None:
-        """Establish connection to Azure Cache for Redis."""
-        if self._client:
+            except Exception as e:
+                logger.warning(f"Auth attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise AzureRedisConnectionError(f"Failed to get auth token after {max_retries} attempts: {e}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+
+    def _ensure_connection(self) -> None:
+        """Ensure connection with automatic reconnection."""
+        if self._client and self._test_connection():
             return
+        
+        self._connect_with_retry()
 
+    def _test_connection(self) -> bool:
+        """Test if current connection is alive."""
+        try:
+            if not self._client:
+                return False
+            self._client.ping()
+            return True
+        except Exception:
+            return False
+
+    def _connect_with_retry(self) -> None:
+        """Connect with retry logic and exponential backoff."""
+        max_retries = self.config.max_connections if hasattr(self.config, 'max_retries') else 3
+        
+        for attempt in range(max_retries):
+            try:
+                self._establish_connection()
+                logger.info("Successfully connected to Azure Redis")
+                return
+            except Exception as e:
+                logger.warning(f"Connection attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise AzureRedisConnectionError(f"Failed to connect after {max_retries} attempts: {e}")
+                time.sleep(min(2 ** attempt, 10))  # Cap at 10 seconds
+
+    def _establish_connection(self) -> None:
+        """Establish the actual Redis connection."""
         if not redis:
             raise ImportError("redis package required for sync operations")
 
+        # Get authentication token
+        password = self._get_auth_token()
+
+        # Close existing connection if any
+        if self._client:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+        # Create Redis client with connection pool
+        self._client = redis.Redis(
+            host=self.config.hostname,
+            port=self.config.port,
+            password=password,
+            ssl=self.config.ssl,
+            db=self.config.db,
+            socket_connect_timeout=self.config.socket_connect_timeout,
+            socket_timeout=self.config.socket_timeout,
+            decode_responses=True,
+            max_connections=self.config.max_connections,
+            retry_on_timeout=self.config.retry_on_timeout
+        )
+
+        self._collections = AzureRedisCollections(
+            self._client,
+            self.config.collection_prefix
+        )
+
+        # Test connection
+        self._client.ping()
+
+    def connect(self) -> None:
+        """Establish connection to Azure Cache for Redis."""
+        self._ensure_connection()
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status of Azure Redis connection."""
         try:
-            # Get authentication token
-            password = self._get_auth_token()
-
-            # Create Redis client
-            self._client = redis.Redis(
-                host=self.config.hostname,
-                port=self.config.port,
-                password=password,
-                ssl=self.config.ssl,
-                db=self.config.db,
-                socket_connect_timeout=self.config.socket_connect_timeout,
-                socket_timeout=self.config.socket_timeout,
-                decode_responses=True
-            )
-
-            self._collections = AzureRedisCollections(
-                self._client,
-                self.config.collection_prefix
-            )
-
-            # Test connection
-            self._client.ping()
-
+            self._ensure_connection()
+            return AzureRedisHealthCheck.sync_health_check(self._client)
         except Exception as e:
-            raise AzureRedisConnectionError(f"Failed to connect to Azure Redis: {e}") from e
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+
+    def ping(self) -> bool:
+        """Test Azure Redis connection with auto-reconnection."""
+        try:
+            self._ensure_connection()
+            return self._client.ping()
+        except Exception as e:
+            logger.warning(f"Ping failed: {e}")
+            return False
+
+    def close(self) -> None:
+        """Close Azure Redis connection."""
+        if self._client:
+            try:
+                self._client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Redis client: {e}")
+            finally:
+                self._client = None
 
     def write_message(
         self,
