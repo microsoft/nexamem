@@ -86,7 +86,7 @@ class FileStorage(BaseStorage):
         memory_id: str,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
-        scope: Optional[str] = None
+        scope: Optional[str] = ""
     ) -> bool:
         """Store memory to file."""
         try:
@@ -103,7 +103,7 @@ class FileStorage(BaseStorage):
                 return False
 
             # Update scope index
-            self._update_scope_index(scope, memory_id)
+            self._update_scope_index(scope, memory_id) # type: ignore s
 
             # Add to audit log
             self._append_audit_entry({
@@ -137,7 +137,7 @@ class FileStorage(BaseStorage):
             memory_file.unlink()
 
             # Update scope index
-            self._update_scope_index(scope, memory_id, remove=True)
+            self._update_scope_index(scope, memory_id, remove=True) # type: ignore
 
             # Add to audit log
             self._append_audit_entry({
