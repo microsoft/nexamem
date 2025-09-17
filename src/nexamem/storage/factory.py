@@ -4,6 +4,9 @@ from typing import Union
 
 from ..config.storage import StorageConfig
 from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage
+from .azure_cosmos import AsyncAzureCosmosStorage, AzureCosmosStorage
+from .azure_blob import AsyncAzureBlobStorage, AzureBlobStorage
+from .azure_ai_search import AsyncAzureAISearchStorage
 from .base import BaseAsyncStorage, BaseStorage
 from .file import AsyncFileStorage, FileStorage
 from .memory import AsyncMemoryStorage, MemoryStorage
@@ -18,6 +21,12 @@ class StorageFactory:
         """Create a synchronous storage instance based on configuration."""
         if config.type.value == "azure_redis":
             return AzureRedisStorage(config.config)
+        elif config.type.value == "azure_cosmos":
+            return AzureCosmosStorage(config.config)
+        elif config.type.value == "azure_blob":
+            return AzureBlobStorage(config.config)
+        elif config.type.value == "azure_ai_search":
+            raise NotImplementedError("Sync Azure AI Search storage not implemented yet. Use async version.")
         elif config.type.value == "memory":
             return MemoryStorage()
         elif config.type.value == "file":
@@ -32,6 +41,12 @@ class StorageFactory:
         """Create an asynchronous storage instance based on configuration."""
         if config.type.value == "azure_redis":
             return AsyncAzureRedisStorage(config.config)
+        elif config.type.value == "azure_cosmos":
+            return AsyncAzureCosmosStorage(config.config)
+        elif config.type.value == "azure_blob":
+            return AsyncAzureBlobStorage(config.config)
+        elif config.type.value == "azure_ai_search":
+            return AsyncAzureAISearchStorage(config.config)
         elif config.type.value == "memory":
             return AsyncMemoryStorage()
         elif config.type.value == "file":

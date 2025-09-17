@@ -43,7 +43,6 @@ __all__ = [
     "ServiceRegistry",
     "ServiceProvider",
     "StorageFactory",
-    "create_storage_from_config",
     # Existing components
     "MemoryScope",
     "ChannelConfig",

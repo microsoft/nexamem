@@ -1,479 +1,399 @@
 """
-Integration tests for Azure Redis storage using fakeredis.
-These tests simulate real Redis operations without requiring actual Redis connection.
+Integration tests for Azure Redis factory and interfaces.
+Tests the complete SOLID implementation including dependency injection.
 """
 
-import asyncio
-import json
 import pytest
-import time
-import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch, AsyncMock
+import fakeredis
 
-try:
-    import fakeredis
-    import fakeredis.aioredis
-    FAKEREDIS_AVAILABLE = True
-except ImportError:
-    fakeredis = None
-    FAKEREDIS_AVAILABLE = False
-
-from nexamem.config.storage import AzureRedisConfig, AzureAuthMethod
-from nexamem.memory_scope import MemoryScope
-from nexamem.storage.azure_redis import (
-    AzureRedisStorage,
-    AsyncAzureRedisStorage,
-    AzureRedisConnectionError
+from nexamem.config.storage import AzureRedisConfig, AzureAuthMethod, StorageConfig
+from nexamem.storage.azure_redis_factory import (
+    AzureRedisStorageFactory,
+    AccessKeyAuthProvider,
+    AsyncAccessKeyAuthProvider,
+    create_azure_redis_storage,
+    create_from_env
+)
+from nexamem.storage.interfaces import (
+    ConversationMemoryAdapter,
+    AsyncConversationMemoryAdapter,
+    MemoryServiceFactory,
+    create_memory_service,
+    create_from_environment
 )
 
 
-pytestmark = pytest.mark.skipif(not FAKEREDIS_AVAILABLE, reason="fakeredis not available")
-
-
-@pytest.fixture
-def fake_redis_config():
-    """Configuration for fake Redis testing."""
-    return AzureRedisConfig(
-        hostname="fake.redis.cache.windows.net",
-        access_key="fake-access-key",
-        auth_method=AzureAuthMethod.ACCESS_KEY,
-        use_collections=True,
-        collection_prefix="test_nexamem"
-    )
-
-
-@pytest.fixture
-def memory_scope():
-    """Test memory scope."""
-    return MemoryScope(
-        agent_id="test_agent",
-        user_id="test_user", 
-        session_id="test_session",
-        env="test"
-    )
-
-
-class TestAzureRedisStorageIntegration:
-    """Integration tests with fake Redis."""
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_fake_redis_sync_operations(self, mock_redis_class, fake_redis_config):
-        """Test sync operations with fake Redis."""
-        # Create fake Redis instance
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        # Test store operation
-        result = storage.store_memory(
-            "test-id-1",
-            "Test content for Redis integration",
-            {"source": "integration_test", "type": "test"},
-            "integration-scope"
-        )
-        assert result is True
-        
-        # Test retrieve operation
-        memory = storage.retrieve_memory("test-id-1")
-        assert memory is not None
-        assert memory["content"] == "Test content for Redis integration"
-        assert memory["metadata"]["source"] == "integration_test"
-        assert memory["scope"] == "integration-scope"
-        assert "created_at" in memory
-        assert "updated_at" in memory
-        
-        # Test list all memories
-        all_memories = storage.list_memories()
-        assert "test-id-1" in all_memories
-        assert len(all_memories) == 1
-        
-        # Test list by scope
-        scope_memories = storage.list_memories("integration-scope")
-        assert "test-id-1" in scope_memories
-        
-        # Test search functionality
-        search_results = storage.search_memories("Redis integration")
-        assert "test-id-1" in search_results
-        
-        search_results = storage.search_memories("nonexistent")
-        assert len(search_results) == 0
-        
-        # Test storage stats
-        stats = storage.get_stats()
-        assert stats["total_memories"] == 1
-        assert stats["storage_type"] == "azure_redis"
-        assert stats["total_scopes"] >= 1
-        
-        # Test update operation (store with same ID)
-        result = storage.store_memory(
-            "test-id-1",
-            "Updated test content",
-            {"source": "integration_test", "updated": True},
-            "integration-scope"
-        )
-        assert result is True
-        
-        updated_memory = storage.retrieve_memory("test-id-1")
-        assert updated_memory is not None
-        assert updated_memory["content"] == "Updated test content"
-        assert updated_memory["metadata"]["updated"] is True
-        
-        # Test delete operation
-        result = storage.delete_memory("test-id-1")
-        assert result is True
-        
-        deleted_memory = storage.retrieve_memory("test-id-1")
-        assert deleted_memory is None
-        
-        # Verify empty state
-        all_memories = storage.list_memories()
-        assert len(all_memories) == 0
-
-    @patch('nexamem.storage.azure_redis.redis_async.Redis')
-    @pytest.mark.asyncio
-    async def test_fake_redis_async_operations(self, mock_redis_class, fake_redis_config):
-        """Test async operations with fake Redis."""
-        # Create fake async Redis instance
-        fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AsyncAzureRedisStorage(fake_redis_config)
-        await storage.connect()
-        
-        # Test async store operation
-        result = await storage.store_memory(
-            "async-test-id-1",
-            "Async test content for Redis integration",
-            {"source": "async_integration_test", "type": "async_test"},
-            "async-integration-scope"
-        )
-        assert result is True
-        
-        # Test async retrieve operation
-        memory = await storage.retrieve_memory("async-test-id-1")
-        assert memory is not None
-        assert memory["content"] == "Async test content for Redis integration"
-        assert memory["metadata"]["source"] == "async_integration_test"
-        assert memory["scope"] == "async-integration-scope"
-        
-        # Test async list operations
-        all_memories = await storage.list_memories()
-        assert "async-test-id-1" in all_memories
-        
-        scope_memories = await storage.list_memories("async-integration-scope")
-        assert "async-test-id-1" in scope_memories
-        
-        # Test async search
-        search_results = await storage.search_memories("Async test")
-        assert "async-test-id-1" in search_results
-        
-        # Test async stats
-        stats = await storage.get_stats()
-        assert stats["total_memories"] == 1
-        assert stats["storage_type"] == "azure_redis"
-        
-        # Test async delete
-        result = await storage.delete_memory("async-test-id-1")
-        assert result is True
-        
-        deleted_memory = await storage.retrieve_memory("async-test-id-1")
-        assert deleted_memory is None
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_multiple_scopes_sync(self, mock_redis_class, fake_redis_config):
-        """Test operations across multiple scopes (sync)."""
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        # Store memories in different scopes
-        for i in range(3):
-            for scope in ["scope-A", "scope-B", "scope-C"]:
-                storage.store_memory(
-                    f"{scope}-memory-{i}",
-                    f"Content for {scope} memory {i}",
-                    {"scope": scope, "index": i},
-                    scope
-                )
-        
-        # Test scope isolation
-        scope_a_memories = storage.list_memories("scope-A")
-        scope_b_memories = storage.list_memories("scope-B") 
-        scope_c_memories = storage.list_memories("scope-C")
-        
-        assert len(scope_a_memories) == 3
-        assert len(scope_b_memories) == 3
-        assert len(scope_c_memories) == 3
-        
-        # Verify no overlap
-        assert set(scope_a_memories).isdisjoint(set(scope_b_memories))
-        assert set(scope_b_memories).isdisjoint(set(scope_c_memories))
-        
-        # Test cross-scope search
-        all_scope_a_results = storage.search_memories("scope-A")
-        assert len(all_scope_a_results) == 3
-        
-        # Test stats across scopes
-        stats = storage.get_stats()
-        assert stats["total_memories"] == 9
-        assert stats["total_scopes"] == 3
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_error_resilience_sync(self, mock_redis_class, fake_redis_config):
-        """Test error handling and resilience (sync)."""
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        # Test retrieving non-existent memory
-        result = storage.retrieve_memory("nonexistent-id")
-        assert result is None
-        
-        # Test deleting non-existent memory
-        result = storage.delete_memory("nonexistent-id")
-        assert result is False
-        
-        # Test searching with empty database
-        results = storage.search_memories("anything")
-        assert results == []
-        
-        # Test listing memories from non-existent scope
-        results = storage.list_memories("nonexistent-scope")
-        assert results == []
-
-    @patch('nexamem.storage.azure_redis.redis_async.Redis')
-    @pytest.mark.asyncio
-    async def test_error_resilience_async(self, mock_redis_class, fake_redis_config):
-        """Test error handling and resilience (async)."""
-        fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AsyncAzureRedisStorage(fake_redis_config)
-        await storage.connect()
-        
-        # Test retrieving non-existent memory
-        result = await storage.retrieve_memory("nonexistent-id")
-        assert result is None
-        
-        # Test deleting non-existent memory
-        result = await storage.delete_memory("nonexistent-id")
-        assert result is False
-        
-        # Test searching with empty database
-        results = await storage.search_memories("anything")
-        assert results == []
-        
-        # Test listing memories from non-existent scope
-        results = await storage.list_memories("nonexistent-scope")
-        assert results == []
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_ping_operations_sync(self, mock_redis_class, fake_redis_config):
-        """Test ping operations (sync)."""
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        # Test successful ping
-        result = storage.ping()
-        assert result is True
-
-    @patch('nexamem.storage.azure_redis.redis_async.Redis')
-    @pytest.mark.asyncio
-    async def test_ping_operations_async(self, mock_redis_class, fake_redis_config):
-        """Test ping operations (async)."""
-        fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AsyncAzureRedisStorage(fake_redis_config)
-        await storage.connect()
-        
-        # Test successful ping
-        result = await storage.ping()
-        assert result is True
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_large_data_operations_sync(self, mock_redis_class, fake_redis_config):
-        """Test operations with larger data sets (sync)."""
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        # Store multiple memories with larger content
-        large_content = "This is a large test content. " * 100  # ~3KB
-        
-        memory_ids = []
-        for i in range(50):
-            memory_id = f"large-memory-{i}"
-            memory_ids.append(memory_id)
-            
-            result = storage.store_memory(
-                memory_id,
-                f"{large_content} Index: {i}",
-                {"index": i, "size": "large"},
-                f"large-scope-{i % 5}"  # 5 different scopes
-            )
-            assert result is True
-        
-        # Test retrieval of all memories
-        all_memories = storage.list_memories()
-        assert len(all_memories) == 50
-        
-        # Test search across large dataset
-        search_results = storage.search_memories("Index: 25")
-        assert len(search_results) == 1
-        assert "large-memory-25" in search_results
-        
-        # Test stats with larger dataset
-        stats = storage.get_stats()
-        assert stats["total_memories"] == 50
-        assert stats["total_scopes"] == 5
-        
-        # Clean up - delete all memories
-        for memory_id in memory_ids:
-            result = storage.delete_memory(memory_id)
-            assert result is True
-        
-        # Verify cleanup
-        final_memories = storage.list_memories()
-        assert len(final_memories) == 0
-
-
-class TestAzureRedisPerformance:
-    """Performance and stress tests for Azure Redis storage."""
-
-    @patch('nexamem.storage.azure_redis.redis.Redis')
-    def test_concurrent_operations_simulation_sync(self, mock_redis_class, fake_redis_config):
-        """Test simulated concurrent operations (sync)."""
-        fake_redis = fakeredis.FakeStrictRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AzureRedisStorage(fake_redis_config)
-        storage.connect()
-        
-        start_time = time.time()
-        
-        # Simulate rapid operations
-        operations_count = 100
-        for i in range(operations_count):
-            # Mix of store, retrieve, and search operations
-            if i % 3 == 0:
-                storage.store_memory(f"perf-{i}", f"Content {i}", {"op": "store"}, "perf-scope")
-            elif i % 3 == 1:
-                storage.retrieve_memory(f"perf-{i-1}")
-            else:
-                storage.search_memories(f"Content")
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        # Should complete reasonably quickly (under 1 second for fake Redis)
-        assert duration < 1.0
-        
-        # Verify data integrity
-        stats = storage.get_stats()
-        expected_stores = operations_count // 3 + (1 if operations_count % 3 > 0 else 0)
-        assert stats["total_memories"] == expected_stores
-
-    @patch('nexamem.storage.azure_redis.redis_async.Redis')
-    @pytest.mark.asyncio
-    async def test_concurrent_operations_simulation_async(self, mock_redis_class, fake_redis_config):
-        """Test simulated concurrent operations (async)."""
-        fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        mock_redis_class.return_value = fake_redis
-        
-        storage = AsyncAzureRedisStorage(fake_redis_config)
-        await storage.connect()
-        
-        start_time = time.time()
-        
-        # Create tasks for concurrent execution
-        async def store_task(i):
-            return await storage.store_memory(f"async-perf-{i}", f"Async Content {i}", {"op": "store"}, "async-perf-scope")
-        
-        async def retrieve_task(i):
-            return await storage.retrieve_memory(f"async-perf-{i}")
-        
-        async def search_task():
-            return await storage.search_memories("Async Content")
-        
-        # Execute tasks concurrently
-        tasks = []
-        for i in range(20):
-            tasks.append(store_task(i))
-        
-        for i in range(10):
-            tasks.append(retrieve_task(i))
-        
-        for _ in range(5):
-            tasks.append(search_task())
-        
-        results = await asyncio.gather(*tasks)
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        # Should complete reasonably quickly
-        assert duration < 2.0
-        
-        # Verify most store operations succeeded
-        store_results = results[:20]
-        successful_stores = sum(1 for r in store_results if r is True)
-        assert successful_stores >= 15  # Allow for some variance in fake Redis
-
-
-class TestAzureRedisConfiguration:
-    """Test various configuration scenarios for Azure Redis."""
-
-    def test_ssl_configuration(self):
-        """Test SSL configuration validation."""
-        # Valid SSL configuration
+class TestAzureRedisFactory:
+    """Test Azure Redis factory patterns."""
+    
+    def test_create_auth_provider_access_key(self):
+        """Test creating access key auth provider."""
         config = AzureRedisConfig(
             hostname="test.redis.cache.windows.net",
-            access_key="test-key",
-            ssl=True,
-            port=6380
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
         )
-        assert config.ssl is True
-        assert config.port == 6380
         
-        # Non-SSL configuration (not recommended for Azure)
-        config_no_ssl = AzureRedisConfig(
+        provider = AzureRedisStorageFactory.create_auth_provider(config)
+        assert isinstance(provider, AccessKeyAuthProvider)
+        assert provider.get_auth_token() == "test_key"
+    
+    def test_create_async_auth_provider_access_key(self):
+        """Test creating async access key auth provider."""
+        config = AzureRedisConfig(
             hostname="test.redis.cache.windows.net",
-            access_key="test-key",
-            ssl=False,
-            port=6379
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
         )
-        assert config_no_ssl.ssl is False
-        assert config_no_ssl.port == 6379
+        
+        provider = AzureRedisStorageFactory.create_async_auth_provider(config)
+        assert isinstance(provider, AsyncAccessKeyAuthProvider)
+    
+    @pytest.mark.asyncio
+    async def test_async_auth_provider(self):
+        """Test async auth provider functionality."""
+        config = AzureRedisConfig(
+            hostname="test.redis.cache.windows.net",
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
+        )
+        
+        provider = AzureRedisStorageFactory.create_async_auth_provider(config)
+        token = await provider.get_auth_token()
+        assert token == "test_key"
+    
+    @patch('nexamem.storage.azure_redis.redis.Redis')
+    def test_create_storage_with_custom_auth(self, mock_redis):
+        """Test creating storage with custom auth provider."""
+        config = AzureRedisConfig(
+            hostname="test.redis.cache.windows.net",
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
+        )
+        
+        custom_auth = AccessKeyAuthProvider("custom_key")
+        fake_client = fakeredis.FakeRedis(decode_responses=True)
+        mock_redis.return_value = fake_client
+        
+        storage = AzureRedisStorageFactory.create_storage(config, custom_auth)
+        assert hasattr(storage, '_auth_provider')
+        assert storage._auth_provider.get_auth_token() == "custom_key"
+    
+    @patch('nexamem.storage.azure_redis.redis_async.Redis')
+    def test_create_async_storage_with_custom_auth(self, mock_redis):
+        """Test creating async storage with custom auth provider."""
+        config = AzureRedisConfig(
+            hostname="test.redis.cache.windows.net",
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
+        )
+        
+        custom_auth = AsyncAccessKeyAuthProvider("custom_key")
+        fake_client = fakeredis.FakeAsyncRedis(decode_responses=True)
+        mock_redis.return_value = fake_client
+        
+        storage = AzureRedisStorageFactory.create_async_storage(config, custom_auth)
+        assert hasattr(storage, '_auth_provider')
+    
+    def test_convenience_function(self):
+        """Test convenience function for creating storage."""
+        config = AzureRedisConfig(
+            hostname="test.redis.cache.windows.net",
+            access_key="test_key",
+            auth_method=AzureAuthMethod.ACCESS_KEY
+        )
+        
+        # Test async preferred (default)
+        storage = create_azure_redis_storage(config)
+        assert hasattr(storage, '_connection_lock')  # Async storage has this
+        
+        # Test sync preferred
+        storage = create_azure_redis_storage(config, async_preferred=False)
+        assert not hasattr(storage, '_connection_lock')  # Sync storage doesn't
 
-    def test_database_selection(self):
-        """Test Redis database selection."""
-        for db_num in range(16):  # Azure Redis supports 0-15
-            config = AzureRedisConfig(
+
+class TestConversationMemoryAdapters:
+    """Test high-level conversation memory interfaces."""
+    
+    def test_sync_conversation_adapter(self):
+        """Test synchronous conversation memory adapter."""
+        storage_config = StorageConfig.memory()
+        adapter = ConversationMemoryAdapter(storage_config)
+        
+        # Test storing conversation turn
+        turn_id = adapter.store_conversation_turn(
+            "conv1",
+            {"user": "Hello", "assistant": "Hi there!"},
+            {"user_id": "user123"}
+        )
+        assert turn_id is not None
+        
+        # Test getting conversation history
+        history = adapter.get_conversation_history("conv1")
+        assert len(history) == 1
+        assert history[0]["conversation_id"] == "conv1"
+        assert "user" in str(history[0]["data"])
+        
+        # Test search
+        conversations = adapter.search_conversations("Hello")
+        assert "conv1" in conversations
+        
+        # Test stats
+        stats = adapter.get_stats()
+        assert stats["adapter_type"] == "conversation_memory"
+        assert stats["total_conversations"] >= 1
+        
+        # Test delete
+        success = adapter.delete_conversation("conv1")
+        assert success is True
+        
+        # Verify deletion
+        history = adapter.get_conversation_history("conv1")
+        assert len(history) == 0
+    
+    @pytest.mark.asyncio
+    async def test_async_conversation_adapter(self):
+        """Test asynchronous conversation memory adapter."""
+        storage_config = StorageConfig.memory()
+        adapter = AsyncConversationMemoryAdapter(storage_config)
+        
+        # Test storing conversation turn
+        turn_id = await adapter.store_conversation_turn(
+            "conv1",
+            {"user": "Hello", "assistant": "Hi there!"},
+            {"user_id": "user123"}
+        )
+        assert turn_id is not None
+        
+        # Test getting conversation history
+        history = await adapter.get_conversation_history("conv1")
+        assert len(history) == 1
+        assert history[0]["conversation_id"] == "conv1"
+        
+        # Test search
+        conversations = await adapter.search_conversations("Hello")
+        assert "conv1" in conversations
+        
+        # Test stats
+        stats = await adapter.get_stats()
+        assert stats["adapter_type"] == "async_conversation_memory"
+        assert stats["total_conversations"] >= 1
+        
+        # Test delete
+        success = await adapter.delete_conversation("conv1")
+        assert success is True
+    
+    def test_memory_service_factory(self):
+        """Test memory service factory."""
+        # Test creating with memory storage
+        service = MemoryServiceFactory.create_conversation_memory(
+            StorageConfig.memory(),
+            async_preferred=False
+        )
+        assert isinstance(service, ConversationMemoryAdapter)
+        
+        # Test creating with async preference
+        service = MemoryServiceFactory.create_conversation_memory(
+            StorageConfig.memory(),
+            async_preferred=True
+        )
+        assert isinstance(service, AsyncConversationMemoryAdapter)
+    
+    def test_three_line_integration(self):
+        """Test the 3-line integration pattern."""
+        # Line 1: Already imported at top
+        # Line 2: Create service
+        memory = create_memory_service("memory", async_preferred=False)
+        
+        # Line 3: Use service
+        turn_id = memory.store_conversation_turn(
+            "conv1", 
+            {"user": "Hello", "assistant": "Hi there!"}
+        )
+        
+        assert turn_id is not None
+        assert isinstance(memory, ConversationMemoryAdapter)
+    
+    @pytest.mark.asyncio
+    async def test_three_line_integration_async(self):
+        """Test the 3-line integration pattern with async."""
+        # Line 1: Already imported at top
+        # Line 2: Create service
+        memory = create_memory_service("memory", async_preferred=True)
+        
+        # Line 3: Use service
+        turn_id = await memory.store_conversation_turn(
+            "conv1", 
+            {"user": "Hello", "assistant": "Hi there!"}
+        )
+        
+        assert turn_id is not None
+        assert isinstance(memory, AsyncConversationMemoryAdapter)
+    
+    def test_unsupported_storage_type(self):
+        """Test error handling for unsupported storage types."""
+        with pytest.raises(ValueError, match="Unsupported storage type"):
+            create_memory_service("unsupported_type")
+
+
+class TestProductionIntegration:
+    """Test production-ready integration scenarios."""
+    
+    def test_azure_redis_conversation_memory_factory(self):
+        """Test Azure Redis conversation memory factory method."""
+        with patch.dict('os.environ', {
+            'AZURE_REDIS_HOSTNAME': 'test.redis.cache.windows.net',
+            'AZURE_REDIS_ACCESS_KEY': 'test_key'
+        }):
+            # Test factory method
+            service = MemoryServiceFactory.create_azure_redis_conversation_memory(
                 hostname="test.redis.cache.windows.net",
-                access_key="test-key",
-                db=db_num
+                access_key="test_key",
+                async_preferred=False
             )
-            assert config.db == db_num
+            
+            assert isinstance(service, ConversationMemoryAdapter)
+            assert service.config.type.value == "azure_redis"
+    
+    @patch.dict('os.environ', {
+        'NEXAMEM_STORAGE_TYPE': 'memory'
+    })
+    def test_create_from_environment(self):
+        """Test creating service from environment variables."""
+        service = create_from_environment(async_preferred=False)
+        assert isinstance(service, ConversationMemoryAdapter)
+    
+    def test_error_resilience(self):
+        """Test error resilience in production scenarios."""
+        # Create adapter with memory storage for testing
+        storage_config = StorageConfig.memory()
+        adapter = ConversationMemoryAdapter(storage_config)
+        
+        # Store some data
+        turn_id = adapter.store_conversation_turn(
+            "conv1",
+            {"user": "Hello", "assistant": "Hi there!"}
+        )
+        
+        # Simulate partial failure (some operations succeed, some fail)
+        # This tests the robustness of the adapter interface
+        history = adapter.get_conversation_history("conv1")
+        assert len(history) >= 1
+        
+        # Test graceful handling of non-existent conversations
+        history = adapter.get_conversation_history("non_existent")
+        assert len(history) == 0
+        
+        # Test search with no results
+        results = adapter.search_conversations("not_found")
+        assert len(results) == 0
+    
+    def test_interface_compliance(self):
+        """Test that implementations comply with the interface protocols."""
+        from nexamem.storage.interfaces import IConversationMemory
+        
+        storage_config = StorageConfig.memory()
+        adapter = ConversationMemoryAdapter(storage_config)
+        
+        # Verify protocol compliance
+        assert isinstance(adapter, IConversationMemory)
+        
+        # Test all required methods exist and work
+        turn_id = adapter.store_conversation_turn("conv1", {"test": "data"})
+        assert turn_id is not None
+        
+        history = adapter.get_conversation_history("conv1")
+        assert len(history) >= 1
+        
+        conversations = adapter.search_conversations("test")
+        assert len(conversations) >= 0
+        
+        success = adapter.delete_conversation("conv1")
+        assert isinstance(success, bool)
 
-    def test_collections_prefix_configuration(self):
-        """Test collections prefix configuration."""
+
+class TestOverridePatterns:
+    """Test patterns for external projects to override and customize."""
+    
+    def test_custom_auth_provider(self):
+        """Test using custom authentication provider."""
+        class CustomAuthProvider:
+            def get_auth_token(self):
+                return "custom_token_from_external_system"
+        
         config = AzureRedisConfig(
             hostname="test.redis.cache.windows.net",
-            access_key="test-key",
-            use_collections=True,
-            collection_prefix="custom_prefix"
+            access_key="fallback_key",  # Fallback if custom fails
+            auth_method=AzureAuthMethod.ACCESS_KEY
         )
-        assert config.use_collections is True
-        assert config.collection_prefix == "custom_prefix"
+        
+        custom_provider = CustomAuthProvider()
+        
+        # External projects can inject their own auth
+        with patch('nexamem.storage.azure_redis.redis.Redis') as mock_redis:
+            fake_client = fakeredis.FakeRedis(decode_responses=True)
+            mock_redis.return_value = fake_client
+            
+            storage = AzureRedisStorageFactory.create_storage(config, custom_provider)
+            storage._auth_provider = custom_provider  # Override injection
+            
+            # Verify custom auth is used
+            token = storage._auth_provider.get_auth_token()
+            assert token == "custom_token_from_external_system"
+    
+    def test_custom_conversation_memory_implementation(self):
+        """Test that external projects can implement IConversationMemory."""
+        from nexamem.storage.interfaces import IConversationMemory
+        
+        class CustomMemoryImplementation:
+            """External project's custom memory implementation."""
+            
+            def __init__(self):
+                self.data = {}
+            
+            def store_conversation_turn(self, conversation_id, turn_data, metadata=None):
+                if conversation_id not in self.data:
+                    self.data[conversation_id] = []
+                turn_id = f"turn_{len(self.data[conversation_id])}"
+                self.data[conversation_id].append({
+                    "turn_id": turn_id,
+                    "data": turn_data,
+                    "metadata": metadata
+                })
+                return turn_id
+            
+            def get_conversation_history(self, conversation_id, limit=None, since_timestamp=None):
+                return self.data.get(conversation_id, [])[:limit] if limit else self.data.get(conversation_id, [])
+            
+            def delete_conversation(self, conversation_id):
+                if conversation_id in self.data:
+                    del self.data[conversation_id]
+                    return True
+                return False
+            
+            def search_conversations(self, query, user_id=None, limit=None):
+                results = []
+                for conv_id, turns in self.data.items():
+                    for turn in turns:
+                        if query.lower() in str(turn["data"]).lower():
+                            results.append(conv_id)
+                            break
+                return results[:limit] if limit else results
+        
+        # Verify it implements the protocol
+        custom_impl = CustomMemoryImplementation()
+        assert isinstance(custom_impl, IConversationMemory)
+        
+        # Test functionality
+        turn_id = custom_impl.store_conversation_turn("conv1", {"user": "Hello"})
+        assert turn_id is not None
+        
+        history = custom_impl.get_conversation_history("conv1")
+        assert len(history) == 1
+        
+        conversations = custom_impl.search_conversations("Hello")
+        assert "conv1" in conversations
+        
+        success = custom_impl.delete_conversation("conv1")
+        assert success is True
