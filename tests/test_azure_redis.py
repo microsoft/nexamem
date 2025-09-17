@@ -94,8 +94,15 @@ def mock_async_redis_client():
     mock_client.xinfo_stream.return_value = {"length": 0}
     mock_client.keys.return_value = []
     mock_client.delete.return_value = 0
-    mock_client.pipeline.return_value = mock_client
-    mock_client.execute.return_value = [True, True, True]
+    
+    # Create a proper pipeline mock for async
+    mock_pipeline = Mock()  # Pipeline itself is not async, just its execute method
+    mock_pipeline.hset = Mock(return_value=None)  # Pipeline methods don't return values
+    mock_pipeline.expire = Mock(return_value=None)
+    mock_pipeline.zadd = Mock(return_value=None)
+    mock_pipeline.execute = AsyncMock(return_value=[True, True, True])  # execute() is async
+    mock_client.pipeline = Mock(return_value=mock_pipeline)  # pipeline() is not async
+    
     mock_client.expire.return_value = True
     mock_client.zadd.return_value = 1
     mock_client.zrevrangebyscore.return_value = []
@@ -355,14 +362,11 @@ class TestAzureRedisStorage:
 
     def test_auth_missing_access_key(self):
         """Test access key authentication with missing key."""
-        config = AzureRedisConfig(
-            hostname="test.redis.cache.windows.net",
-            auth_method=AzureAuthMethod.ACCESS_KEY
-        )
-        storage = AzureRedisStorage(config)
-        
-        with pytest.raises(AzureRedisConnectionError, match="Access key required"):
-            storage._get_auth_token()
+        with pytest.raises(ValueError, match="access_key required when using access_key auth"):
+            config = AzureRedisConfig(
+                hostname="test.redis.cache.windows.net",
+                auth_method=AzureAuthMethod.ACCESS_KEY
+            )
 
     @patch('nexamem.storage.azure_redis.DefaultAzureCredential')
     def test_auth_entra_id(self, mock_credential):
@@ -555,9 +559,13 @@ class TestAzureRedisCollections:
         )
         
         assert isinstance(message_id, str)
-        mock_async_redis_client.hset.assert_called()
-        mock_async_redis_client.zadd.assert_called()
-        mock_async_redis_client.expire.assert_called()
+        # Check pipeline was used
+        mock_async_redis_client.pipeline.assert_called()
+        # Get pipeline and check its methods were called
+        pipeline = mock_async_redis_client.pipeline.return_value
+        assert pipeline.hset.call_count >= 1
+        assert pipeline.zadd.call_count >= 1
+        assert pipeline.expire.call_count >= 1
 
     def test_collections_sync_get_messages_empty(self, mock_redis_client, memory_scope):
         """Test getting messages when none exist (sync)."""

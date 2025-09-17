@@ -200,37 +200,39 @@ class TestAzureRedisStorage:
     @patch('nexamem.storage.azure_redis.redis.Redis')
     def test_memory_operations(self, mock_redis):
         """Test basic memory operations."""
+        storage = AzureRedisStorage(self.config)
+        
         # Use fakeredis for actual Redis operations  
         fake_client = fakeredis.FakeRedis(decode_responses=True)
         # Mock just the connection creation to use fake client
-        with patch.object(storage, '_establish_connection') as mock_establish:
-            mock_establish.return_value = None
+        with patch.object(storage, 'connect') as mock_connect:
+            mock_connect.return_value = None
             storage._client = fake_client
             storage._collections = AzureRedisCollections(fake_client, storage.config.collection_prefix)
             
             # Test store
             success = storage.store_memory("test1", "content1", {"key": "value"}, "scope1")
             assert success is True
-        
-        # Test retrieve
-        memory = storage.retrieve_memory("test1")
-        assert memory is not None
-        assert memory["content"] == "content1"
-        assert memory["metadata"] == {"key": "value"}
-        assert memory["scope"] == "scope1"
-        
-        # Test list
-        memories = storage.list_memories()
-        assert "test1" in memories
-        
-        # Test search
-        results = storage.search_memories("content")
-        assert "test1" in results
-        
-        # Test stats
-        stats = storage.get_stats()
-        assert stats["total_memories"] >= 1
-        assert stats["storage_type"] == "azure_redis"
+            
+            # Test retrieve
+            memory = storage.retrieve_memory("test1")
+            assert memory is not None
+            assert memory["content"] == "content1"
+            assert memory["metadata"] == {"key": "value"}
+            assert memory["scope"] == "scope1"
+            
+            # Test list
+            memories = storage.list_memories()
+            assert "test1" in memories
+            
+            # Test search
+            results = storage.search_memories("content")
+            assert "test1" in results
+            
+            # Test stats
+            stats = storage.get_stats()
+            assert stats["total_memories"] >= 1
+            assert stats["storage_type"] == "azure_redis"
         
         # Test delete
         deleted = storage.delete_memory("test1")
@@ -293,11 +295,13 @@ class TestAsyncAzureRedisStorage:
     @patch('nexamem.storage.azure_redis.redis_async.Redis')
     async def test_async_memory_operations(self, mock_redis):
         """Test async memory operations."""
+        storage = AsyncAzureRedisStorage(self.config)
+        
         # Use fakeredis for actual Redis operations
         fake_client = fakeredis.FakeAsyncRedis(decode_responses=True)
         # Mock just the connection creation to use fake client
-        with patch.object(storage, '_establish_connection') as mock_establish:
-            mock_establish.return_value = None
+        with patch.object(storage, 'connect') as mock_connect:
+            mock_connect.return_value = None
             storage._client = fake_client
             storage._collections = AzureRedisCollections(fake_client, storage.config.collection_prefix)
             
@@ -439,8 +443,8 @@ class TestProductionFeatures:
         # Use fakeredis for actual Redis operations
         fake_client = fakeredis.FakeAsyncRedis(decode_responses=True)
         # Mock just the connection creation to use fake client
-        with patch.object(storage, '_establish_connection') as mock_establish:
-            mock_establish.return_value = None
+        with patch.object(storage, 'connect') as mock_connect:
+            mock_connect.return_value = None
             storage._client = fake_client
             storage._collections = AzureRedisCollections(fake_client, storage.config.collection_prefix)
             
@@ -465,8 +469,8 @@ class TestProductionFeatures:
         # Use fakeredis for actual Redis operations
         fake_client = fakeredis.FakeAsyncRedis(decode_responses=True)
         # Mock just the connection creation to use fake client
-        with patch.object(storage, '_establish_connection') as mock_establish:
-            mock_establish.return_value = None
+        with patch.object(storage, 'connect') as mock_connect:
+            mock_connect.return_value = None
             storage._client = fake_client
             storage._collections = AzureRedisCollections(fake_client, storage.config.collection_prefix)
             
@@ -502,8 +506,8 @@ class TestProductionFeatures:
         mock_client.hset.side_effect = Exception("Redis error")
         
         # Mock just the connection creation to use failing client
-        with patch.object(storage, '_establish_connection') as mock_establish:
-            mock_establish.return_value = None
+        with patch.object(storage, 'connect') as mock_connect:
+            mock_connect.return_value = None
             storage._client = mock_client
             
             # Operations should return False/empty on failure

@@ -9,7 +9,7 @@ from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage, AzureRedisCo
 from .azure_cosmos import AsyncAzureCosmosStorage, AzureCosmosStorage, AzureCosmosConnectionError, AzureCosmosHealthCheck
 from .azure_blob import AsyncAzureBlobStorage, AzureBlobStorage, AzureBlobConnectionError, AzureBlobHealthCheck
 from .azure_ai_search import (
-    AsyncAzureAISearchStorage, AzureAISearchConnectionError, AzureAISearchHealthCheck,
+    AsyncAzureAISearchStorage, AzureAISearchStorage, AzureAISearchConnectionError, AzureAISearchHealthCheck,
     EmbeddingProvider, AsyncEmbeddingProvider,
     OpenAIEmbeddingProvider, AsyncOpenAIEmbeddingProvider,
     AzureOpenAIEmbeddingProvider, AsyncAzureOpenAIEmbeddingProvider,
@@ -78,6 +78,7 @@ __all__ = [
     
     # Azure AI Search implementations
     "AsyncAzureAISearchStorage",
+    "AzureAISearchStorage",
     "AzureAISearchConnectionError",
     "AzureAISearchHealthCheck",
     

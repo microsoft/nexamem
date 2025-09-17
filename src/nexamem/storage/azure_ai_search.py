@@ -950,6 +950,506 @@ class AsyncAzureAISearchStorage(BaseAsyncStorage):
             return []
 
 
-# Sync version would be similar but without async/await
-# For brevity, I'm focusing on the async implementation
-# The sync version follows the same pattern as other storage implementations
+class AzureAISearchStorage(BaseStorage):
+    """Sync Azure AI Search storage adapter with production features and vector search."""
+
+    def __init__(self, config: AzureAISearchConfig, embedding_provider: Optional[EmbeddingProvider] = None):
+        self.config = config
+        self._search_client: Optional[SearchClient] = None
+        self._index_client: Optional[SearchIndexClient] = None
+        self._embedding_provider = embedding_provider
+
+    def _get_auth_credential(self):
+        """Get authentication credential based on configured method."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.config.auth_method == AzureAuthMethod.ACCESS_KEY:
+                    if not self.config.api_key:
+                        raise AzureAISearchConnectionError("API key required for ACCESS_KEY auth method")
+                    return AzureKeyCredential(self.config.api_key)
+
+                elif self.config.auth_method == AzureAuthMethod.ENTRA_ID:
+                    if not DefaultAzureCredential:
+                        raise ImportError("azure-identity package required for Entra ID auth")
+                    return DefaultAzureCredential()
+
+                elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
+                    if not SecretClient or not DefaultAzureCredential:
+                        raise ImportError("azure-keyvault-secrets and azure-identity packages required for Key Vault auth")
+
+                    # Get secret from Key Vault
+                    credential = DefaultAzureCredential()
+                    secret_client = SecretClient(
+                        vault_url=self.config.keyvault_url,
+                        credential=credential
+                    )
+                    secret = secret_client.get_secret(self.config.secret_name)
+                    return AzureKeyCredential(secret.value)
+
+                else:
+                    raise AzureAISearchConnectionError(f"Unsupported auth method: {self.config.auth_method}")
+
+            except Exception as e:
+                logger.warning(f"Auth attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise AzureAISearchConnectionError(f"Failed to get auth credential after {max_retries} attempts: {e}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+
+    def _create_embedding_provider(self) -> EmbeddingProvider:
+        """Create the default embedding provider based on configuration."""
+        if self.config.embedding_provider == "openai":
+            return OpenAIEmbeddingProvider(
+                api_key=self.config.openai_api_key,
+                model=self.config.openai_model
+            )
+        elif self.config.embedding_provider == "azure_openai":
+            return AzureOpenAIEmbeddingProvider(
+                endpoint=self.config.azure_openai_endpoint,
+                api_key=self.config.azure_openai_api_key,
+                deployment=self.config.azure_openai_deployment,
+                api_version=self.config.azure_openai_api_version
+            )
+        else:
+            raise ValueError(f"Unsupported embedding provider: {self.config.embedding_provider}")
+
+    def connect(self) -> None:
+        """Establish connection to Azure AI Search."""
+        if self._search_client:
+            return
+
+        if not SearchClient:
+            raise ImportError("azure-search-documents package required for Azure AI Search operations")
+
+        # Get authentication credential
+        credential = self._get_auth_credential()
+
+        # Create search clients
+        self._search_client = SearchClient(
+            endpoint=self.config.endpoint,
+            index_name=self.config.index_name,
+            credential=credential
+        )
+        
+        self._index_client = SearchIndexClient(
+            endpoint=self.config.endpoint,
+            credential=credential
+        )
+
+        # Create embedding provider if not provided
+        if not self._embedding_provider:
+            self._embedding_provider = self._create_embedding_provider()
+
+        # Create index if it doesn't exist
+        if self.config.auto_create_index:
+            self._create_index_if_not_exists()
+
+    def _create_index_if_not_exists(self) -> None:
+        """Create the search index if it doesn't exist."""
+        try:
+            # Check if index exists
+            self._index_client.get_index(self.config.index_name)
+        except ResourceNotFoundError:
+            # Index doesn't exist, create it
+            self._create_index()
+
+    def _create_index(self) -> None:
+        """Create the search index with vector search configuration."""
+        # Get vector dimension from embedding provider
+        vector_dimension = self._embedding_provider.get_dimension()
+        
+        # Define the index schema
+        fields = [
+            SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+            SearchableField(name="content", type=SearchFieldDataType.String),
+            SimpleField(name="scope", type=SearchFieldDataType.String, filterable=True),
+            SimpleField(name="created_at", type=SearchFieldDataType.Double, filterable=True, sortable=True),
+            SimpleField(name="updated_at", type=SearchFieldDataType.Double, filterable=True, sortable=True),
+            SearchField(
+                name="content_vector",
+                type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+                searchable=True,
+                vector_search_dimensions=vector_dimension,
+                vector_search_profile_name="default-vector-profile"
+            ),
+            SimpleField(name="memory_type", type=SearchFieldDataType.String, filterable=True),
+        ]
+
+        # Configure vector search
+        vector_search = VectorSearch(
+            profiles=[
+                VectorSearchProfile(
+                    name="default-vector-profile",
+                    algorithm_configuration_name="default-hnsw-config"
+                )
+            ],
+            algorithms=[
+                HnswAlgorithmConfiguration(
+                    name="default-hnsw-config",
+                    kind=VectorSearchAlgorithmKind.HNSW,
+                    parameters={
+                        "m": 4,
+                        "efConstruction": 400,
+                        "efSearch": 500,
+                        "metric": "cosine"
+                    }
+                )
+            ]
+        )
+
+        # Create the index
+        index = SearchIndex(
+            name=self.config.index_name,
+            fields=fields,
+            vector_search=vector_search
+        )
+
+        self._index_client.create_index(index)
+        logger.info(f"Created search index: {self.config.index_name}")
+
+    def store_memory(
+        self,
+        memory_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        scope: Optional[str] = None
+    ) -> bool:
+        """Store a memory in Azure AI Search with vector embedding."""
+        try:
+            self.connect()
+            
+            # Generate embedding for the content
+            content_vector = self._embedding_provider.generate_embedding(content)
+            
+            memory_document = {
+                'id': memory_id,
+                'content': content,
+                'content_vector': content_vector,
+                'scope': scope or 'default',
+                'created_at': time.time(),
+                'updated_at': time.time(),
+                'memory_type': 'conversation_memory',
+                'metadata': json.dumps(metadata or {})
+            }
+            
+            # Upload document to search index
+            result = self._search_client.upload_documents([memory_document])
+            
+            # Check if upload was successful
+            if result and len(result) > 0 and result[0].succeeded:
+                # Add to audit log
+                audit_entry = {
+                    'id': f"audit_{memory_id}_{uuid.uuid4()}",
+                    'content': f"Audit: Memory {memory_id} stored",
+                    'content_vector': [0.0] * len(content_vector),  # Zero vector for audit entries
+                    'scope': scope or 'default',
+                    'created_at': time.time(),
+                    'updated_at': time.time(),
+                    'memory_type': 'audit_log',
+                    'metadata': json.dumps({
+                        'memory_id': memory_id,
+                        'action': 'store',
+                        'timestamp': time.time()
+                    })
+                }
+                
+                try:
+                    self._search_client.upload_documents([audit_entry])
+                except Exception as audit_error:
+                    logger.warning(f"Failed to create audit entry: {audit_error}")
+                
+                return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Failed to store memory {memory_id}: {e}")
+            return False
+
+    def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a memory from Azure AI Search."""
+        try:
+            self.connect()
+            
+            try:
+                result = self._search_client.get_document(key=memory_id)
+                if result and result.get('memory_type') == 'conversation_memory':
+                    # Parse metadata back from JSON
+                    if 'metadata' in result:
+                        try:
+                            result['metadata'] = json.loads(result['metadata'])
+                        except json.JSONDecodeError:
+                            result['metadata'] = {}
+                    
+                    return result
+            except ResourceNotFoundError:
+                return None
+            
+            return None
+        except Exception as e:
+            logger.error(f"Failed to retrieve memory {memory_id}: {e}")
+            return None
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory from Azure AI Search."""
+        try:
+            self.connect()
+            
+            # Get memory data first for audit log
+            memory_data = self.retrieve_memory(memory_id)
+            if not memory_data:
+                return False
+            
+            scope = memory_data.get('scope', 'default')
+            
+            # Delete the memory document
+            result = self._search_client.delete_documents([{"id": memory_id}])
+            
+            # Check if deletion was successful
+            if result and len(result) > 0 and result[0].succeeded:
+                # Add to audit log
+                audit_entry = {
+                    'id': f"audit_{memory_id}_{uuid.uuid4()}",
+                    'content': f"Audit: Memory {memory_id} deleted",
+                    'content_vector': [0.0] * self._embedding_provider.get_dimension(),
+                    'scope': scope,
+                    'created_at': time.time(),
+                    'updated_at': time.time(),
+                    'memory_type': 'audit_log',
+                    'metadata': json.dumps({
+                        'memory_id': memory_id,
+                        'action': 'delete',
+                        'timestamp': time.time()
+                    })
+                }
+                
+                try:
+                    self._search_client.upload_documents([audit_entry])
+                except Exception as audit_error:
+                    logger.warning(f"Failed to create audit entry: {audit_error}")
+                
+                return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
+            return False
+
+    def list_memories(
+        self,
+        scope: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """List memory IDs from Azure AI Search."""
+        try:
+            self.connect()
+            
+            # Build filter
+            filter_clause = "memory_type eq 'conversation_memory'"
+            if scope:
+                filter_clause += f" and scope eq '{scope}'"
+            
+            memory_ids = []
+            
+            # Search for memories
+            results = self._search_client.search(
+                search_text="*",
+                filter=filter_clause,
+                select=["id"],
+                top=limit or 1000
+            )
+            
+            for result in results:
+                memory_ids.append(result['id'])
+                if limit and len(memory_ids) >= limit:
+                    break
+            
+            return memory_ids
+        except Exception as e:
+            logger.error(f"Failed to list memories: {e}")
+            return []
+
+    def search_memories(
+        self,
+        query: str,
+        scope: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[str]:
+        """Search memories by content using vector similarity in Azure AI Search."""
+        try:
+            self.connect()
+            
+            # Generate embedding for the query
+            query_vector = self._embedding_provider.generate_embedding(query)
+            
+            # Build filter
+            filter_clause = "memory_type eq 'conversation_memory'"
+            if scope:
+                filter_clause += f" and scope eq '{scope}'"
+            
+            matching_ids = []
+            
+            # Perform hybrid search (vector + text)
+            results = self._search_client.search(
+                search_text=query,
+                vector_queries=[{
+                    "vector": query_vector,
+                    "k_nearest_neighbors": limit or self.config.search_top_k,
+                    "fields": "content_vector"
+                }],
+                filter=filter_clause,
+                select=["id", "@search.score"],
+                top=limit or self.config.search_top_k
+            )
+            
+            for result in results:
+                # Apply similarity threshold
+                score = result.get('@search.score', 0)
+                if score >= self.config.similarity_threshold:
+                    matching_ids.append(result['id'])
+                
+                if limit and len(matching_ids) >= limit:
+                    break
+            
+            return matching_ids
+        except Exception as e:
+            logger.error(f"Failed to search memories: {e}")
+            return []
+
+    def get_audit_log(
+        self,
+        memory_id: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Get audit log entries from Azure AI Search."""
+        try:
+            self.connect()
+            
+            # Build filter
+            filter_clause = "memory_type eq 'audit_log'"
+            if memory_id:
+                # Search in metadata for the memory_id
+                filter_clause += f" and search.ismatch('{memory_id}', 'metadata')"
+            
+            audit_entries = []
+            
+            # Search for audit entries
+            results = self._search_client.search(
+                search_text="*",
+                filter=filter_clause,
+                order_by=["created_at desc"],
+                top=limit or 100
+            )
+            
+            for result in results:
+                # Parse metadata back from JSON
+                if 'metadata' in result:
+                    try:
+                        result['metadata'] = json.loads(result['metadata'])
+                    except json.JSONDecodeError:
+                        result['metadata'] = {}
+                
+                audit_entries.append(result)
+                
+                if limit and len(audit_entries) >= limit:
+                    break
+            
+            return audit_entries
+        except Exception as e:
+            logger.error(f"Failed to get audit log: {e}")
+            return []
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get storage statistics from Azure AI Search."""
+        try:
+            self.connect()
+            
+            # Count total memories
+            memory_results = self._search_client.search(
+                search_text="*",
+                filter="memory_type eq 'conversation_memory'",
+                include_total_count=True,
+                top=0
+            )
+            
+            memory_count = memory_results.get_count() or 0
+            
+            # Count unique scopes
+            scope_results = self._search_client.search(
+                search_text="*",
+                filter="memory_type eq 'conversation_memory'",
+                facets=["scope"],
+                top=0
+            )
+            
+            scopes = []
+            if hasattr(scope_results, 'get_facets'):
+                scope_facets = scope_results.get_facets()
+                if 'scope' in scope_facets:
+                    scopes = [facet['value'] for facet in scope_facets['scope']]
+            
+            # Count audit entries
+            audit_results = self._search_client.search(
+                search_text="*",
+                filter="memory_type eq 'audit_log'",
+                include_total_count=True,
+                top=0
+            )
+            
+            audit_count = audit_results.get_count() or 0
+            
+            return {
+                'total_memories': memory_count,
+                'total_scopes': len(scopes),
+                'audit_entries': audit_count,
+                'storage_type': 'azure_ai_search',
+                'vector_dimension': self._embedding_provider.get_dimension(),
+                'embedding_provider': self.config.embedding_provider
+            }
+        except Exception as e:
+            logger.error(f"Failed to get stats: {e}")
+            return {
+                'total_memories': 0,
+                'total_scopes': 0,
+                'audit_entries': 0,
+                'storage_type': 'azure_ai_search',
+                'error': str(e)
+            }
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status of Azure AI Search connection."""
+        try:
+            self.connect()
+            return AzureAISearchHealthCheck.sync_health_check(self._search_client, self.config.index_name)
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+
+    def ping(self) -> bool:
+        """Test Azure AI Search connection with auto-reconnection."""
+        try:
+            health = self.get_health_status()
+            return health.get("status") == "healthy"
+        except Exception as e:
+            logger.warning(f"Ping failed: {e}")
+            return False
+
+    def close(self) -> None:
+        """Close Azure AI Search connection and cleanup resources."""
+        if self._search_client:
+            try:
+                self._search_client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Search client: {e}")
+            finally:
+                self._search_client = None
+        
+        if self._index_client:
+            try:
+                self._index_client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Index client: {e}")
+            finally:
+                self._index_client = None
