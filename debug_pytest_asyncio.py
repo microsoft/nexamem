@@ -42,7 +42,7 @@ def check_asyncio_functionality():
         async def test_async():
             await asyncio.sleep(0.001)
             return "success"
-        
+
         result = asyncio.run(test_async())
         print(f"✓ Basic asyncio functionality works: {result}")
         return True
@@ -56,14 +56,14 @@ def check_pytest_config():
     import os
     config_files = ['pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg']
     found_configs = []
-    
+
     for config_file in config_files:
         if os.path.exists(config_file):
             found_configs.append(config_file)
-    
+
     if found_configs:
         print(f"✓ Found pytest config files: {', '.join(found_configs)}")
-        
+
         # Check pytest.ini specifically
         if 'pytest.ini' in found_configs:
             with open('pytest.ini') as f:
@@ -111,7 +111,7 @@ def main():
     print(f"Python version: {sys.version}")
     print(f"Python executable: {sys.executable}")
     print()
-    
+
     checks = [
         check_pytest,
         check_pytest_asyncio,
@@ -120,7 +120,7 @@ def main():
         run_pytest_version_check,
         run_pytest_markers_check,
     ]
-    
+
     results = []
     for check in checks:
         try:
@@ -130,12 +130,12 @@ def main():
             print(f"✗ Check {check.__name__} failed with exception: {e}")
             results.append(False)
         print()
-    
+
     print("=== Summary ===")
     passed = sum(1 for r in results if r is True)
     total = len(results)
     print(f"Passed: {passed}/{total}")
-    
+
     if passed == total:
         print("✓ All checks passed - pytest-asyncio should work correctly")
     else:

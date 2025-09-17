@@ -16,12 +16,12 @@ except ImportError:
 
 class ChannelConfig(BaseModel):
     """Configuration for a memory channel."""
-    
+
     name: str = Field(..., description="Channel name (snake_case)")
     ttl_sec: int = Field(..., description="Time-to-live in seconds (max 7 days)")
     encrypt: bool = Field(default=False, description="Enable client-side encryption")
     quota_bytes: Optional[int] = Field(default=None, description="Daily quota in bytes")
-    
+
     @field_validator('name')
     @classmethod
     def validate_name(cls, v: str) -> str:
@@ -38,7 +38,7 @@ class ChannelConfig(BaseModel):
         if len(v) > 50:
             raise ValueError("Channel name cannot exceed 50 characters")
         return v
-    
+
     @field_validator('ttl_sec')
     @classmethod
     def validate_ttl(cls, v: int) -> int:
@@ -52,7 +52,7 @@ class ChannelConfig(BaseModel):
         if v > max_ttl:
             raise ValueError(f"TTL cannot exceed {max_ttl} seconds (7 days)")
         return v
-    
+
     @field_validator('quota_bytes')
     @classmethod
     def validate_quota_bytes(cls, v: Optional[int]) -> Optional[int]:
@@ -69,38 +69,38 @@ class ChannelConfig(BaseModel):
 
 class ChannelsYamlSchema(BaseModel):
     """Schema for the complete channels.yaml file."""
-    
+
     channels: Dict[str, Dict[str, Any]] = Field(..., description="Channel configurations")
-    
+
     @field_validator('channels')
     @classmethod
     def validate_channels_dict(cls, v: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Validate the channels dictionary structure."""
         if not isinstance(v, dict):
             raise ValueError("'channels' must be a dictionary")
-        
+
         if not v:
             raise ValueError("At least one channel must be defined")
-        
+
         # Reserved channel names that shouldn't be used
         reserved_names = {'admin', 'system', 'internal', 'redis', 'audit'}
-        
+
         for channel_name, channel_config in v.items():
             # Validate channel name at top level
             if not isinstance(channel_name, str):
                 raise ValueError(f"Channel name must be string, got {type(channel_name)}")
-            
+
             if channel_name in reserved_names:
                 raise ValueError(f"Channel name '{channel_name}' is reserved")
-            
+
             # Validate channel config structure
             if not isinstance(channel_config, dict):
                 raise ValueError(f"Channel '{channel_name}' config must be a dictionary")
-            
+
             # Check required fields
             if 'ttl_sec' not in channel_config:
                 raise ValueError(f"Channel '{channel_name}' missing required field 'ttl_sec'")
-            
+
             # Check for unknown fields
             allowed_fields = {'ttl_sec', 'encrypt', 'quota_bytes'}
             unknown_fields = set(channel_config.keys()) - allowed_fields
@@ -109,7 +109,7 @@ class ChannelsYamlSchema(BaseModel):
                     f"Channel '{channel_name}' has unknown fields: {', '.join(unknown_fields)}. "
                     f"Allowed fields: {', '.join(allowed_fields)}"
                 )
-        
+
         return v
 
 
@@ -197,7 +197,7 @@ channels:
 
 ### Channel Names:
 - Must be snake_case: start with lowercase letter, followed by letters/numbers/underscores
-- Cannot be empty or exceed 50 characters  
+- Cannot be empty or exceed 50 characters
 - Cannot use reserved names: admin, system, internal, redis, audit
 
 ### ttl_sec:
@@ -221,7 +221,7 @@ channels:
     quota_bytes: 1000000 # 1MB
 
   routing:
-    ttl_sec: 86400      # 24 hours  
+    ttl_sec: 86400      # 24 hours
     encrypt: false
 ```
 """
@@ -229,15 +229,15 @@ channels:
 
 class ChannelManager:
     """Manages channel configurations from YAML and runtime registration."""
-    
+
     def __init__(self, yaml_path: Optional[str] = None, strict_validation: bool = True):
         self.channels: Dict[str, ChannelConfig] = {}
         self._yaml_path = yaml_path
         self._strict_validation = strict_validation
-        
+
         if yaml_path and os.path.exists(yaml_path):
             self.load_from_yaml(yaml_path)
-    
+
     def load_from_yaml(self, yaml_path: str) -> None:
         """Load channel configurations from YAML file with schema validation."""
         try:

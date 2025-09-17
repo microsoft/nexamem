@@ -80,9 +80,9 @@ class SQLiteStorage(BaseStorage):
             with sqlite3.connect(self.database_path) as conn:
                 # Store or update memory
                 conn.execute("""
-                    INSERT OR REPLACE INTO memories 
+                    INSERT OR REPLACE INTO memories
                     (memory_id, content, metadata, scope, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 
+                    VALUES (?, ?, ?, ?,
                         COALESCE((SELECT created_at FROM memories WHERE memory_id = ?), ?),
                         ?)
                 """, (memory_id, content, metadata_json, scope, memory_id, timestamp, timestamp))
@@ -160,14 +160,14 @@ class SQLiteStorage(BaseStorage):
             with sqlite3.connect(self.database_path) as conn:
                 if scope:
                     query = """
-                        SELECT memory_id FROM memories 
-                        WHERE scope = ? 
+                        SELECT memory_id FROM memories
+                        WHERE scope = ?
                         ORDER BY created_at DESC
                     """
                     params = (scope,)
                 else:
                     query = """
-                        SELECT memory_id FROM memories 
+                        SELECT memory_id FROM memories
                         ORDER BY created_at DESC
                     """
                     params = ()
@@ -195,14 +195,14 @@ class SQLiteStorage(BaseStorage):
 
                 if scope:
                     sql_query = """
-                        SELECT memory_id FROM memories 
+                        SELECT memory_id FROM memories
                         WHERE scope = ? AND content LIKE ?
                         ORDER BY created_at DESC
                     """
                     params = (scope, search_pattern)
                 else:
                     sql_query = """
-                        SELECT memory_id FROM memories 
+                        SELECT memory_id FROM memories
                         WHERE content LIKE ?
                         ORDER BY created_at DESC
                     """
@@ -231,7 +231,7 @@ class SQLiteStorage(BaseStorage):
                 if memory_id:
                     query = """
                         SELECT memory_id, action, timestamp, scope
-                        FROM audit_log 
+                        FROM audit_log
                         WHERE memory_id = ?
                         ORDER BY timestamp DESC
                     """
@@ -239,7 +239,7 @@ class SQLiteStorage(BaseStorage):
                 else:
                     query = """
                         SELECT memory_id, action, timestamp, scope
-                        FROM audit_log 
+                        FROM audit_log
                         ORDER BY timestamp DESC
                     """
                     params = ()

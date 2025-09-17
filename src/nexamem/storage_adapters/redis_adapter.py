@@ -4,14 +4,13 @@ Implements the IStorageAdapter interface for Redis storage.
 """
 
 import json
-import time
 import logging
-from typing import List, Optional, Dict, Any, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 try:
     import redis
     import redis.asyncio as redis_async
-    from redis.exceptions import RedisError, ConnectionError, TimeoutError
+    from redis.exceptions import ConnectionError, RedisError, TimeoutError
     REDIS_AVAILABLE = True
 except ImportError:
     redis = None
@@ -29,9 +28,11 @@ else:
     Redis = Any
     AsyncRedis = Any
 
+import contextlib
+
+from nexamem.schemas.memory_entry import MemoryEntry
 from nexamem.schemas.memory_filter import MemoryFilter
 from nexamem.schemas.memory_scope import MemoryScope
-from nexamem.schemas.memory_entry import MemoryEntry
 from nexamem.storage_adapters.configs.redis_adapter_config import RedisAdapterConfig
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class RedisConnectionError(RedisAdapterError):
 class RedisAdapter:
     """
     Redis storage adapter implementing IStorageAdapter interface.
-    
+
     Key Design:
     - Keys follow pattern: {env}:{agent_id}:{user_id}:{session_id}:{channel}:{uuid}
     - Values are JSON-serialized MemoryEntry objects
@@ -71,8 +72,8 @@ class RedisAdapter:
             )
 
         self.config = config
-        self._client: Optional["Redis"] = None
-        self._async_client: Optional["AsyncRedis"] = None
+        self._client: Optional[Redis] = None
+        self._async_client: Optional[AsyncRedis] = None
         self.key_prefix = "nexamem"
 
     @property
@@ -127,7 +128,7 @@ class RedisAdapter:
             parts = key.split(":")
             if len(parts) < 7 or parts[0] != self.key_prefix:
                 return None
-            
+
             return {
                 "env": parts[1],
                 "agent_id": parts[2],
@@ -171,7 +172,7 @@ class RedisAdapter:
         """
         # Build pattern: prefix:env:agent_id:user_id:session:channel:*
         # Use filter.session for session_id and filter.source for env/agent_id
-        
+
         # For now, use wildcard matching - can be enhanced with more specific patterns
         if filter_obj.channel_names:
             # If specific channels, we'll need to scan multiple patterns
@@ -182,10 +183,10 @@ class RedisAdapter:
 
         # Extract session info
         session = filter_obj.session or "*"
-        
+
         # Build basic pattern - this can be enhanced based on filter requirements
         pattern = f"{self.key_prefix}:*:*:*:{session}:{channel}:*"
-        
+
         return pattern
 
     async def write(self, entries: List[MemoryEntry]) -> None:
@@ -205,17 +206,17 @@ class RedisAdapter:
             for entry in entries:
                 key = self._build_key(entry)
                 value = self._serialize_entry(entry)
-                
+
                 # Set the key-value pair
                 pipe.set(key, value)
-                
+
                 # Apply TTL if specified
                 if entry.ttl_override:
                     pipe.expire(key, entry.ttl_override)
 
             # Execute all commands in pipeline
             await pipe.execute()
-            
+
             logger.debug(f"Successfully wrote {len(entries)} entries to Redis")
 
         except Exception as e:
@@ -235,44 +236,44 @@ class RedisAdapter:
         try:
             client = self.async_client
             pattern = self._build_filter_pattern(filter_obj)
-            
+
             # Use SCAN to find matching keys
             entries = []
             cursor = 0
-            
+
             while True:
                 cursor, keys = await client.scan(
                     cursor=cursor,
                     match=pattern,
                     count=1000  # Batch size
                 )
-                
+
                 if keys:
                     # Get values for all keys in batch
                     values = await client.mget(keys)
-                    
+
                     for key, value in zip(keys, values):
                         if value:
                             try:
                                 entry = self._deserialize_entry(value)
-                                
+
                                 # Apply additional filtering
                                 if self._matches_filter(entry, filter_obj):
                                     entries.append(entry)
-                                    
+
                             except Exception as e:
                                 logger.warning(f"Failed to deserialize entry for key {key}: {e}")
                                 continue
-                
+
                 if cursor == 0:  # Scan complete
                     break
 
             # Apply post-processing filters
             entries = self._apply_additional_filters(entries, filter_obj)
-            
+
             # Sort by timestamp (newest first)
             entries.sort(key=lambda x: x.timestamp, reverse=True)
-            
+
             # Apply max_msgs limit
             if filter_obj.max_msgs:
                 entries = entries[:filter_obj.max_msgs]
@@ -308,10 +309,7 @@ class RedisAdapter:
             return False
 
         # Check session (using metadata.session_id)
-        if filter_obj.session and entry.metadata.session_id != filter_obj.session:
-            return False
-
-        return True
+        return not (filter_obj.session and entry.metadata.session_id != filter_obj.session)
 
     def _apply_additional_filters(self, entries: List[MemoryEntry], filter_obj: MemoryFilter) -> List[MemoryEntry]:
         """
@@ -325,7 +323,7 @@ class RedisAdapter:
             Filtered list of entries
         """
         filtered_entries = []
-        
+
         for entry in entries:
             # Check timestamp filters
             if filter_obj.starting_timestamp:
@@ -379,22 +377,22 @@ class RedisAdapter:
             # First, find matching keys
             client = self.async_client
             pattern = self._build_filter_pattern(filter_obj)
-            
+
             keys_to_delete = []
             cursor = 0
-            
+
             while True:
                 cursor, keys = await client.scan(
                     cursor=cursor,
                     match=pattern,
                     count=1000
                 )
-                
+
                 if keys:
                     # For more precise filtering, we could load and check each entry
                     # For now, use pattern matching
                     keys_to_delete.extend(keys)
-                
+
                 if cursor == 0:
                     break
 
@@ -419,7 +417,7 @@ class RedisAdapter:
         try:
             client = self.async_client
             result = await client.ping()
-            return result == True
+            return result
         except Exception as e:
             logger.warning(f"Redis health check failed: {e}")
             return False
@@ -430,11 +428,11 @@ class RedisAdapter:
             if self._async_client:
                 await self._async_client.close()
                 self._async_client = None
-            
+
             if self._client:
                 self._client.close()
                 self._client = None
-                
+
             logger.debug("Redis connections closed")
 
         except Exception as e:
@@ -443,7 +441,5 @@ class RedisAdapter:
     def __del__(self):
         """Cleanup on object destruction."""
         if self._client:
-            try:
+            with contextlib.suppress(Exception):
                 self._client.close()
-            except Exception:
-                pass

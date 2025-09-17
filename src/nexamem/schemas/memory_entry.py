@@ -1,6 +1,8 @@
-from nexamem.schemas.memory_scope import MemoryScope
-from pydantic import BaseModel, Field
 from typing import Optional, Union
+
+from pydantic import BaseModel, Field
+
+from nexamem.schemas.memory_scope import MemoryScope
 
 
 class MemoryEntry(BaseModel):

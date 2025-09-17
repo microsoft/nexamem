@@ -1,9 +1,8 @@
 from abc import abstractmethod
 from typing import Protocol
 
-from nexamem.schemas.memory_filter import MemoryFilter
-from nexamem.schemas.memory_scope import MemoryScope
 from nexamem.schemas.memory_entry import MemoryEntry
+from nexamem.schemas.memory_filter import MemoryFilter
 from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
 
 
@@ -20,7 +19,7 @@ class IStorageAdapter(Protocol):
         :param config: Configuration object for the storage adapter.
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
-    
+
 
     @abstractmethod
     async def write(self, entries: list[MemoryEntry]) -> None:

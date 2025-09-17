@@ -13,12 +13,12 @@ try:
         # Import the legacy config module directly to avoid circular import
         import importlib.util
         import os
-        
+
         legacy_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.py')
         spec = importlib.util.spec_from_file_location("nexamem_legacy_config", legacy_config_path)
         legacy_config = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(legacy_config)
-        
+
         ConfigError = legacy_config.ConfigError
         initialize = legacy_config.initialize
         get_config = legacy_config.get_config
@@ -38,7 +38,7 @@ except Exception:
 __all__ = [
     # Legacy config (backward compatibility)
     "ConfigError",
-    "initialize", 
+    "initialize",
     "get_config",
     # New Pydantic config models
     "StorageConfig",

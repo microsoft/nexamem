@@ -1,9 +1,11 @@
-from lagom import Container
+
 import yaml
-from typing import Any, Dict, List
+from lagom import Container
+
+from nexamem.channels.channel import Channel
 from nexamem.channels.storage_factory import StorageAdapterFactory
 from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
-from nexamem.channels.channel import Channel
+
 
 class ChannelFactory:
     """
@@ -28,7 +30,7 @@ class ChannelFactory:
         :return: List of Channel instances.
         """
         channels: list[Channel] = []
-        with open(yaml_path, "r", encoding="utf-8") as f:
+        with open(yaml_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
         for entry in config.get("channels", []):
             name = entry.get("name")

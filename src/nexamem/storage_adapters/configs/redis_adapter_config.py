@@ -1,7 +1,8 @@
 """
 Redis storage adapter configuration.
 """
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
 
 

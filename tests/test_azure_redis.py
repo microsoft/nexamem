@@ -3,20 +3,19 @@ Tests for Azure Redis storage implementation.
 Tests both sync and async variants with comprehensive coverage.
 """
 
-import asyncio
 import json
-import pytest
 import time
-import uuid
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 
-from nexamem.config.storage import AzureRedisConfig, AzureAuthMethod
+import pytest
+
+from nexamem.config.storage import AzureAuthMethod, AzureRedisConfig
 from nexamem.memory_scope import MemoryScope
 from nexamem.storage.azure_redis import (
-    AzureRedisStorage,
     AsyncAzureRedisStorage,
+    AzureRedisCollections,
     AzureRedisConnectionError,
-    AzureRedisCollections
+    AzureRedisStorage,
 )
 
 
@@ -94,7 +93,7 @@ def mock_async_redis_client():
     mock_client.xinfo_stream.return_value = {"length": 0}
     mock_client.keys.return_value = []
     mock_client.delete.return_value = 0
-    
+
     # Create a proper pipeline mock for async
     mock_pipeline = Mock()  # Pipeline itself is not async, just its execute method
     mock_pipeline.hset = Mock(return_value=None)  # Pipeline methods don't return values
@@ -102,7 +101,7 @@ def mock_async_redis_client():
     mock_pipeline.zadd = Mock(return_value=None)
     mock_pipeline.execute = AsyncMock(return_value=[True, True, True])  # execute() is async
     mock_client.pipeline = Mock(return_value=mock_pipeline)  # pipeline() is not async
-    
+
     mock_client.expire.return_value = True
     mock_client.zadd.return_value = 1
     mock_client.zrevrangebyscore.return_value = []
@@ -112,11 +111,11 @@ def mock_async_redis_client():
     mock_client.get.return_value = None
     mock_client.zrange.return_value = []
     mock_client.set.return_value = True
-    
+
     # Mock context manager for pipeline
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-    
+
     return mock_client
 
 
@@ -173,10 +172,10 @@ class TestAzureRedisStorage:
     def test_connect_success(self, mock_redis, azure_redis_config, mock_redis_client):
         """Test successful connection."""
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
         storage.connect()
-        
+
         assert storage._client == mock_redis_client
         mock_redis_client.ping.assert_called_once()
 
@@ -184,9 +183,9 @@ class TestAzureRedisStorage:
     def test_connect_failure(self, mock_redis, azure_redis_config):
         """Test connection failure."""
         mock_redis.Redis.side_effect = Exception("Connection failed")
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         with pytest.raises(AzureRedisConnectionError, match="Failed to connect to Azure Redis"):
             storage.connect()
 
@@ -194,16 +193,16 @@ class TestAzureRedisStorage:
     def test_store_memory_success(self, mock_redis, azure_redis_config, mock_redis_client):
         """Test successful memory storage."""
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.store_memory(
             "test-id",
             "Test content",
             {"key": "value"},
             "test-scope"
         )
-        
+
         assert result is True
         mock_redis_client.hset.assert_called()
         mock_redis_client.sadd.assert_called()
@@ -221,11 +220,11 @@ class TestAzureRedisStorage:
         }
         mock_redis_client.hget.return_value = json.dumps(memory_data)
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.retrieve_memory("test-id")
-        
+
         assert result == memory_data
         mock_redis_client.hget.assert_called_with("test_nexamem:memories", "test-id")
 
@@ -234,11 +233,11 @@ class TestAzureRedisStorage:
         """Test memory retrieval when not found."""
         mock_redis_client.hget.return_value = None
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.retrieve_memory("nonexistent")
-        
+
         assert result is None
 
     @patch('nexamem.storage.azure_redis.redis')
@@ -253,11 +252,11 @@ class TestAzureRedisStorage:
         mock_redis_client.hget.return_value = json.dumps(memory_data)
         mock_redis_client.hdel.return_value = 1
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.delete_memory("test-id")
-        
+
         assert result is True
         mock_redis_client.hdel.assert_called()
         mock_redis_client.srem.assert_called()
@@ -268,11 +267,11 @@ class TestAzureRedisStorage:
         """Test listing all memories."""
         mock_redis_client.hkeys.return_value = ["id1", "id2", "id3"]
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.list_memories()
-        
+
         assert result == ["id1", "id2", "id3"]
         mock_redis_client.hkeys.assert_called_with("test_nexamem:memories")
 
@@ -281,11 +280,11 @@ class TestAzureRedisStorage:
         """Test listing memories by scope."""
         mock_redis_client.smembers.return_value = {"id1", "id2"}
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.list_memories("test-scope")
-        
+
         assert set(result) == {"id1", "id2"}
         mock_redis_client.smembers.assert_called_with("test_nexamem:scope:test-scope")
 
@@ -293,7 +292,7 @@ class TestAzureRedisStorage:
     def test_search_memories(self, mock_redis, azure_redis_config, mock_redis_client):
         """Test searching memories."""
         mock_redis_client.hkeys.return_value = ["id1", "id2"]
-        
+
         # Mock retrieve_memory to return different content
         def mock_retrieve(memory_id):
             if memory_id == "id1":
@@ -301,14 +300,14 @@ class TestAzureRedisStorage:
             elif memory_id == "id2":
                 return {"content": "Java development"}
             return None
-        
+
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
         storage.retrieve_memory = Mock(side_effect=mock_retrieve)
-        
+
         result = storage.search_memories("python")
-        
+
         assert result == ["id1"]
 
     @patch('nexamem.storage.azure_redis.redis')
@@ -318,11 +317,11 @@ class TestAzureRedisStorage:
         mock_redis_client.keys.return_value = ["scope1", "scope2"]
         mock_redis_client.xinfo_stream.return_value = {"length": 10}
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         stats = storage.get_stats()
-        
+
         assert stats["total_memories"] == 5
         assert stats["total_scopes"] == 2
         assert stats["audit_entries"] == 10
@@ -333,11 +332,11 @@ class TestAzureRedisStorage:
         """Test successful ping."""
         mock_redis_client.ping.return_value = True
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.ping()
-        
+
         assert result is True
 
     @patch('nexamem.storage.azure_redis.redis')
@@ -345,25 +344,25 @@ class TestAzureRedisStorage:
         """Test ping failure."""
         mock_redis_client.ping.side_effect = Exception("Connection failed")
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         result = storage.ping()
-        
+
         assert result is False
 
     def test_auth_access_key(self, azure_redis_config):
         """Test access key authentication."""
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         token = storage._get_auth_token()
-        
+
         assert token == "test-access-key"
 
     def test_auth_missing_access_key(self):
         """Test access key authentication with missing key."""
         with pytest.raises(ValueError, match="access_key required when using access_key auth"):
-            config = AzureRedisConfig(
+            AzureRedisConfig(
                 hostname="test.redis.cache.windows.net",
                 auth_method=AzureAuthMethod.ACCESS_KEY
             )
@@ -376,16 +375,16 @@ class TestAzureRedisStorage:
         mock_cred_instance = Mock()
         mock_cred_instance.get_token.return_value = mock_token
         mock_credential.return_value = mock_cred_instance
-        
+
         config = AzureRedisConfig(
             hostname="test.redis.cache.windows.net",
             auth_method=AzureAuthMethod.ENTRA_ID,
             use_entra_id=True
         )
         storage = AzureRedisStorage(config)
-        
+
         token = storage._get_auth_token()
-        
+
         assert token == "entra-token"
         mock_cred_instance.get_token.assert_called_with("https://redis.azure.com/.default")
 
@@ -404,10 +403,10 @@ class TestAsyncAzureRedisStorage:
     async def test_connect_success(self, mock_redis_async, azure_redis_config, mock_async_redis_client):
         """Test successful async connection."""
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
         await storage.connect()
-        
+
         assert storage._client == mock_async_redis_client
         mock_async_redis_client.ping.assert_called_once()
 
@@ -416,16 +415,16 @@ class TestAsyncAzureRedisStorage:
     async def test_store_memory_success(self, mock_redis_async, azure_redis_config, mock_async_redis_client):
         """Test successful async memory storage."""
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         result = await storage.store_memory(
             "test-id",
             "Test content",
             {"key": "value"},
             "test-scope"
         )
-        
+
         assert result is True
         mock_async_redis_client.hset.assert_called()
         mock_async_redis_client.sadd.assert_called()
@@ -444,11 +443,11 @@ class TestAsyncAzureRedisStorage:
         }
         mock_async_redis_client.hget.return_value = json.dumps(memory_data)
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         result = await storage.retrieve_memory("test-id")
-        
+
         assert result == memory_data
 
     @patch('nexamem.storage.azure_redis.redis_async')
@@ -462,11 +461,11 @@ class TestAsyncAzureRedisStorage:
         mock_async_redis_client.hget.return_value = json.dumps(memory_data)
         mock_async_redis_client.hdel.return_value = 1
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         result = await storage.delete_memory("test-id")
-        
+
         assert result is True
 
     @patch('nexamem.storage.azure_redis.redis_async')
@@ -475,11 +474,11 @@ class TestAsyncAzureRedisStorage:
         """Test async memory listing."""
         mock_async_redis_client.hkeys.return_value = ["id1", "id2", "id3"]
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         result = await storage.list_memories()
-        
+
         assert result == ["id1", "id2", "id3"]
 
     @patch('nexamem.storage.azure_redis.redis_async')
@@ -488,7 +487,7 @@ class TestAsyncAzureRedisStorage:
         """Test async memory search."""
         mock_async_redis_client.hkeys.return_value = ["id1", "id2"]
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         # Mock retrieve_memory to return different content
         async def mock_retrieve(memory_id):
             if memory_id == "id1":
@@ -496,12 +495,12 @@ class TestAsyncAzureRedisStorage:
             elif memory_id == "id2":
                 return {"content": "Java development"}
             return None
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
         storage.retrieve_memory = mock_retrieve
-        
+
         result = await storage.search_memories("python")
-        
+
         assert result == ["id1"]
 
     @patch('nexamem.storage.azure_redis.AsyncDefaultAzureCredential')
@@ -513,16 +512,16 @@ class TestAsyncAzureRedisStorage:
         mock_cred_instance = AsyncMock()
         mock_cred_instance.get_token.return_value = mock_token
         mock_credential.return_value = mock_cred_instance
-        
+
         config = AzureRedisConfig(
             hostname="test.redis.cache.windows.net",
             auth_method=AzureAuthMethod.ENTRA_ID,
             use_entra_id=True
         )
         storage = AsyncAzureRedisStorage(config)
-        
+
         token = await storage._get_auth_token()
-        
+
         assert token == "async-entra-token"
 
 
@@ -533,14 +532,14 @@ class TestAzureRedisCollections:
     def test_collections_sync_add_message(self, mock_redis, mock_redis_client, memory_scope):
         """Test adding message using collections (sync)."""
         collections = AzureRedisCollections(mock_redis_client, "test")
-        
+
         message_id = collections.add_message_to_channel_sync(
             memory_scope,
             "test_channel",
             {"content": "Test message"},
             3600
         )
-        
+
         assert isinstance(message_id, str)
         mock_redis_client.hset.assert_called()
         mock_redis_client.zadd.assert_called()
@@ -550,14 +549,14 @@ class TestAzureRedisCollections:
     async def test_collections_async_add_message(self, mock_async_redis_client, memory_scope):
         """Test adding message using collections (async)."""
         collections = AzureRedisCollections(mock_async_redis_client, "test")
-        
+
         message_id = await collections.add_message_to_channel_async(
             memory_scope,
             "test_channel",
             {"content": "Test message"},
             3600
         )
-        
+
         assert isinstance(message_id, str)
         # Check pipeline was used
         mock_async_redis_client.pipeline.assert_called()
@@ -571,12 +570,12 @@ class TestAzureRedisCollections:
         """Test getting messages when none exist (sync)."""
         mock_redis_client.zrevrangebyscore.return_value = []
         collections = AzureRedisCollections(mock_redis_client, "test")
-        
+
         messages, metadata = collections.get_messages_from_channel_sync(
             memory_scope,
             "test_channel"
         )
-        
+
         assert messages == []
         assert metadata["total_messages"] == 0
         assert metadata["total_bytes"] == 0
@@ -587,12 +586,12 @@ class TestAzureRedisCollections:
         """Test getting messages when none exist (async)."""
         mock_async_redis_client.zrevrangebyscore.return_value = []
         collections = AzureRedisCollections(mock_async_redis_client, "test")
-        
+
         messages, metadata = await collections.get_messages_from_channel_async(
             memory_scope,
             "test_channel"
         )
-        
+
         assert messages == []
         assert metadata["total_messages"] == 0
 
@@ -600,21 +599,21 @@ class TestAzureRedisCollections:
         """Test getting messages with data (sync)."""
         # Mock sorted set returning UUIDs
         mock_redis_client.zrevrangebyscore.return_value = ["uuid1", "uuid2"]
-        
+
         # Mock hash returning message data
         message_data = [
             json.dumps({"content": "Message 1", "uuid": "uuid1", "timestamp": 1234567890}),
             json.dumps({"content": "Message 2", "uuid": "uuid2", "timestamp": 1234567891})
         ]
         mock_redis_client.hmget.return_value = message_data
-        
+
         collections = AzureRedisCollections(mock_redis_client, "test")
-        
+
         messages, metadata = collections.get_messages_from_channel_sync(
             memory_scope,
             "test_channel"
         )
-        
+
         assert len(messages) == 2
         assert messages[0] == "Message 1"
         assert messages[1] == "Message 2"
@@ -630,7 +629,7 @@ class TestAzureRedisIntegration:
         """Test complete memory lifecycle (sync)."""
         # Setup mock responses for a full lifecycle
         mock_redis.Redis.return_value = mock_redis_client
-        
+
         # Mock storage operations
         mock_redis_client.hget.side_effect = [
             None,  # Initial retrieve (not found)
@@ -647,13 +646,13 @@ class TestAzureRedisIntegration:
             })
         ]
         mock_redis_client.hdel.return_value = 1
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         # Memory should not exist initially
         memory = storage.retrieve_memory("test-id")
         assert memory is None
-        
+
         # Store memory
         result = storage.store_memory(
             "test-id",
@@ -662,12 +661,12 @@ class TestAzureRedisIntegration:
             "test-scope"
         )
         assert result is True
-        
+
         # Retrieve memory
         memory = storage.retrieve_memory("test-id")
         assert memory is not None
         assert memory["content"] == "Test content"
-        
+
         # Delete memory
         result = storage.delete_memory("test-id")
         assert result is True
@@ -677,7 +676,7 @@ class TestAzureRedisIntegration:
     async def test_full_memory_lifecycle_async(self, mock_redis_async, azure_redis_config, mock_async_redis_client):
         """Test complete memory lifecycle (async)."""
         mock_redis_async.Redis.return_value = mock_async_redis_client
-        
+
         # Mock storage operations
         mock_async_redis_client.hget.side_effect = [
             None,  # Initial retrieve (not found)
@@ -694,13 +693,13 @@ class TestAzureRedisIntegration:
             })
         ]
         mock_async_redis_client.hdel.return_value = 1
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         # Memory should not exist initially
         memory = await storage.retrieve_memory("test-id")
         assert memory is None
-        
+
         # Store memory
         result = await storage.store_memory(
             "test-id",
@@ -709,12 +708,12 @@ class TestAzureRedisIntegration:
             "test-scope"
         )
         assert result is True
-        
+
         # Retrieve memory
         memory = await storage.retrieve_memory("test-id")
         assert memory is not None
         assert memory["content"] == "Test content"
-        
+
         # Delete memory
         result = await storage.delete_memory("test-id")
         assert result is True
@@ -724,9 +723,9 @@ class TestAzureRedisIntegration:
         """Test error handling in sync operations."""
         mock_redis.Redis.return_value = mock_redis_client
         mock_redis_client.hset.side_effect = Exception("Redis error")
-        
+
         storage = AzureRedisStorage(azure_redis_config)
-        
+
         # Store should handle exception gracefully
         result = storage.store_memory("test-id", "content")
         assert result is False
@@ -737,9 +736,9 @@ class TestAzureRedisIntegration:
         """Test error handling in async operations."""
         mock_redis_async.Redis.return_value = mock_async_redis_client
         mock_async_redis_client.hset.side_effect = Exception("Redis error")
-        
+
         storage = AsyncAzureRedisStorage(azure_redis_config)
-        
+
         # Store should handle exception gracefully
         result = await storage.store_memory("test-id", "content")
         assert result is False

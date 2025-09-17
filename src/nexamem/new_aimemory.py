@@ -3,11 +3,11 @@
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .channels.channels import ChannelConfig, ChannelManager
 from .config.aimemory import AIMemoryConfig
 from .di import DIContainer, ServiceProvider
-from .storage import BaseAsyncStorage, BaseStorage, StorageFactory
-from .channels.channels import ChannelManager, ChannelConfig
 from .memory_scope import MemoryScope
+from .storage import BaseAsyncStorage, BaseStorage, StorageFactory
 
 
 class AIMemoryServiceProvider(ServiceProvider):
@@ -43,7 +43,7 @@ class AIMemory:
             self.container.register(BaseStorage, provider)
 
         self._storage = self.container.resolve(BaseStorage)
-        
+
         # Initialize channel manager with YAML configuration
         self.channels = ChannelManager(
             yaml_path=config.channels_yaml,
@@ -170,7 +170,7 @@ class AIMemory:
     ) -> str:
         """
         Write content to a memory channel (legacy API compatibility).
-        
+
         This method provides compatibility with the legacy AIMemory API
         while using the new storage backend.
         """
@@ -178,11 +178,11 @@ class AIMemory:
         if not self.channel_exists(channel):
             from .aimemory import ChannelNotFound
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         # For now, store as a simple memory with channel metadata
         # Future enhancement: implement full policy validation, encryption, etc.
         memory_id = str(uuid.uuid4())
-        
+
         metadata = {
             "channel": channel,
             "scope_dict": scope.model_dump(),
@@ -191,17 +191,17 @@ class AIMemory:
             "auto_pii": auto_pii,
             "content_type": "legacy_write"
         }
-        
+
         success = self._storage.store_memory(
             memory_id=memory_id,
             content=str(content),
             metadata=metadata,
             scope=f"{scope.agent_id}:{scope.user_id}:{scope.session_id}:{channel}"
         )
-        
+
         if not success:
             raise RuntimeError(f"Failed to write to channel {channel}")
-        
+
         return memory_id
 
     def read(
@@ -216,7 +216,7 @@ class AIMemory:
     ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Read messages from a memory channel (legacy API compatibility).
-        
+
         Returns:
             Tuple of (messages, metadata)
         """
@@ -224,17 +224,17 @@ class AIMemory:
         if not self.channel_exists(channel):
             from .aimemory import ChannelNotFound
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         # Query memories for this scope and channel
         scope_key = f"{scope.agent_id}:{scope.user_id}:{scope.session_id}:{channel}"
         memory_ids = self._storage.list_memories(scope=scope_key, limit=max_msgs)
-        
+
         messages = []
         for memory_id in memory_ids:
             memory = self._storage.retrieve_memory(memory_id)
             if memory and memory.get("metadata", {}).get("channel") == channel:
                 messages.append(memory["content"])
-        
+
         metadata = {
             "channel": channel,
             "messages_returned": len(messages),
@@ -244,7 +244,7 @@ class AIMemory:
             "max_tokens": max_tokens,
             "since_sec": since_sec
         }
-        
+
         return messages, metadata
 
 
@@ -261,7 +261,7 @@ class AsyncAIMemory:
             self.container.register(BaseAsyncStorage, provider)
 
         self._storage = self.container.resolve(BaseAsyncStorage)
-        
+
         # Initialize channel manager with YAML configuration
         self.channels = ChannelManager(
             yaml_path=config.channels_yaml,
@@ -388,7 +388,7 @@ class AsyncAIMemory:
     ) -> str:
         """
         Write content to a memory channel (legacy API compatibility).
-        
+
         This method provides compatibility with the legacy AIMemory API
         while using the new storage backend.
         """
@@ -396,11 +396,11 @@ class AsyncAIMemory:
         if not self.channel_exists(channel):
             from .aimemory import ChannelNotFound
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         # For now, store as a simple memory with channel metadata
         # Future enhancement: implement full policy validation, encryption, etc.
         memory_id = str(uuid.uuid4())
-        
+
         metadata = {
             "channel": channel,
             "scope_dict": scope.model_dump(),
@@ -409,17 +409,17 @@ class AsyncAIMemory:
             "auto_pii": auto_pii,
             "content_type": "legacy_write"
         }
-        
+
         success = await self._storage.store_memory(
             memory_id=memory_id,
             content=str(content),
             metadata=metadata,
             scope=f"{scope.agent_id}:{scope.user_id}:{scope.session_id}:{channel}"
         )
-        
+
         if not success:
             raise RuntimeError(f"Failed to write to channel {channel}")
-        
+
         return memory_id
 
     async def read(
@@ -434,7 +434,7 @@ class AsyncAIMemory:
     ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Read messages from a memory channel (legacy API compatibility).
-        
+
         Returns:
             Tuple of (messages, metadata)
         """
@@ -442,17 +442,17 @@ class AsyncAIMemory:
         if not self.channel_exists(channel):
             from .aimemory import ChannelNotFound
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         # Query memories for this scope and channel
         scope_key = f"{scope.agent_id}:{scope.user_id}:{scope.session_id}:{channel}"
         memory_ids = await self._storage.list_memories(scope=scope_key, limit=max_msgs)
-        
+
         messages = []
         for memory_id in memory_ids:
             memory = await self._storage.retrieve_memory(memory_id)
             if memory and memory.get("metadata", {}).get("channel") == channel:
                 messages.append(memory["content"])
-        
+
         metadata = {
             "channel": channel,
             "messages_returned": len(messages),
@@ -462,7 +462,7 @@ class AsyncAIMemory:
             "max_tokens": max_tokens,
             "since_sec": since_sec
         }
-        
+
         return messages, metadata
 
 

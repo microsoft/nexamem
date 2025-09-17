@@ -4,15 +4,15 @@ Provides both sync and async storage adapters with enterprise features.
 """
 
 import asyncio
-import json
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Union
+from contextlib import asynccontextmanager, suppress
+from typing import Any, Dict, List, Optional
 
 try:
-    from azure.cosmos import CosmosClient, PartitionKey, exceptions as cosmos_exceptions
+    from azure.cosmos import CosmosClient, PartitionKey
+    from azure.cosmos import exceptions as cosmos_exceptions
     from azure.cosmos.aio import CosmosClient as AsyncCosmosClient
 except ImportError:
     CosmosClient = None
@@ -21,7 +21,7 @@ except ImportError:
     PartitionKey = None
 
 try:
-    from azure.identity import DefaultAzureCredential, ClientSecretCredential
+    from azure.identity import ClientSecretCredential, DefaultAzureCredential
     from azure.keyvault.secrets import SecretClient
 except ImportError:
     DefaultAzureCredential = None
@@ -35,9 +35,8 @@ except ImportError:
     AsyncDefaultAzureCredential = None
     AsyncSecretClient = None
 
-from ..config.storage import AzureCosmosConfig, AzureAuthMethod
-from .base import BaseStorage, BaseAsyncStorage
-
+from ..config.storage import AzureAuthMethod, AzureCosmosConfig
+from .base import BaseAsyncStorage, BaseStorage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -50,22 +49,22 @@ class AzureCosmosConnectionError(Exception):
 
 class AzureCosmosHealthCheck:
     """Health check utilities for Azure Cosmos DB connections."""
-    
+
     @staticmethod
     async def async_health_check(container) -> Dict[str, Any]:
         """Perform comprehensive async health check."""
         try:
             start_time = time.time()
-            
+
             # Test connection with a simple query
             query = "SELECT TOP 1 c.id FROM c"
             items = []
             async for item in container.query_items(query=query, enable_cross_partition_query=True):
                 items.append(item)
                 break  # Just need one item to test connection
-            
+
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -78,19 +77,19 @@ class AzureCosmosHealthCheck:
                 "error": str(e),
                 "error_type": type(e).__name__
             }
-    
+
     @staticmethod
     def sync_health_check(container) -> Dict[str, Any]:
         """Perform comprehensive sync health check."""
         try:
             start_time = time.time()
-            
+
             # Test connection with a simple query
             query = "SELECT TOP 1 c.id FROM c"
             items = list(container.query_items(query=query, enable_cross_partition_query=True, max_item_count=1))
-            
+
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -162,13 +161,13 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
             # Double-check after acquiring lock
             if self._container:
                 return
-            
+
             await self._connect_with_retry()
 
     async def _connect_with_retry(self) -> None:
         """Connect with retry logic and exponential backoff."""
         max_retries = self.config.retry_total
-        
+
         for attempt in range(max_retries):
             try:
                 await self._establish_connection()
@@ -190,16 +189,14 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
 
         # Close existing connection if any
         if self._client:
-            try:
+            with suppress(Exception):
                 await self._client.close()
-            except Exception:
-                pass
 
         # Create Cosmos client
         if isinstance(credential, str):
             # Using access key
             self._client = AsyncCosmosClient(
-                self.config.endpoint, 
+                self.config.endpoint,
                 credential,
                 consistency_level=self.config.consistency_level,
                 request_timeout=self.config.request_timeout,
@@ -208,7 +205,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
         else:
             # Using credential object (Entra ID)
             self._client = AsyncCosmosClient(
-                self.config.endpoint, 
+                self.config.endpoint,
                 credential,
                 consistency_level=self.config.consistency_level,
                 request_timeout=self.config.request_timeout,
@@ -217,7 +214,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
 
         # Get database reference
         self._database = self._client.get_database_client(self.config.database_name)
-        
+
         # Get or create container
         if self.config.auto_create_container:
             try:
@@ -271,9 +268,9 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     'updated_at': time.time(),
                     'memory_type': 'conversation_memory'
                 }
-                
+
                 await container.create_item(body=memory_data)
-                
+
                 # Add to audit log
                 audit_entry = {
                     'id': f"audit_{memory_id}_{uuid.uuid4()}",
@@ -287,7 +284,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     await container.create_item(body=audit_entry)
                 except Exception as audit_error:
                     logger.warning(f"Failed to create audit entry: {audit_error}")
-                
+
                 return True
         except Exception as e:
             logger.error(f"Failed to store memory {memory_id}: {e}")
@@ -316,12 +313,12 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                 memory_data = await self.retrieve_memory(memory_id)
                 if not memory_data:
                     return False
-                
+
                 scope = memory_data.get('scope', 'default')
-                
+
                 # Delete the memory
                 await container.delete_item(item=memory_id, partition_key=memory_id)
-                
+
                 # Add to audit log
                 audit_entry = {
                     'id': f"audit_{memory_id}_{uuid.uuid4()}",
@@ -335,7 +332,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     await container.create_item(body=audit_entry)
                 except Exception as audit_error:
                     logger.warning(f"Failed to create audit entry: {audit_error}")
-                
+
                 return True
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
@@ -355,7 +352,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                 else:
                     query = "SELECT c.id FROM c WHERE c.memory_type = 'conversation_memory'"
                     parameters = []
-                
+
                 memory_ids = []
                 async for item in container.query_items(
                     query=query,
@@ -366,7 +363,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     memory_ids.append(item['id'])
                     if limit and len(memory_ids) >= limit:
                         break
-                
+
                 return memory_ids
         except Exception as e:
             logger.error(f"Failed to list memories: {e}")
@@ -384,11 +381,11 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                 # Build search query with CONTAINS for text search
                 base_query = "SELECT c.id FROM c WHERE CONTAINS(LOWER(c.content), @query) AND c.memory_type = 'conversation_memory'"
                 parameters = [{"name": "@query", "value": query.lower()}]
-                
+
                 if scope:
                     base_query += " AND c.scope = @scope"
                     parameters.append({"name": "@scope", "value": scope})
-                
+
                 matching_ids = []
                 async for item in container.query_items(
                     query=base_query,
@@ -399,7 +396,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     matching_ids.append(item['id'])
                     if limit and len(matching_ids) >= limit:
                         break
-                
+
                 return matching_ids
         except Exception as e:
             logger.error(f"Failed to search memories: {e}")
@@ -419,7 +416,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                 else:
                     query = "SELECT * FROM c WHERE c.memory_type = 'audit_log' ORDER BY c.timestamp DESC"
                     parameters = []
-                
+
                 audit_entries = []
                 async for item in container.query_items(
                     query=query,
@@ -430,7 +427,7 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                     audit_entries.append(item)
                     if limit and len(audit_entries) >= limit:
                         break
-                
+
                 return audit_entries
         except Exception as e:
             logger.error(f"Failed to get audit log: {e}")
@@ -446,20 +443,20 @@ class AsyncAzureCosmosStorage(BaseAsyncStorage):
                 async for count in container.query_items(query=memory_query, enable_cross_partition_query=True):
                     memory_count = count
                     break
-                
+
                 # Count unique scopes
                 scope_query = "SELECT DISTINCT VALUE c.scope FROM c WHERE c.memory_type = 'conversation_memory'"
                 scopes = []
                 async for scope in container.query_items(query=scope_query, enable_cross_partition_query=True):
                     scopes.append(scope)
-                
+
                 # Count audit entries
                 audit_query = "SELECT VALUE COUNT(1) FROM c WHERE c.memory_type = 'audit_log'"
                 audit_count = 0
                 async for count in container.query_items(query=audit_query, enable_cross_partition_query=True):
                     audit_count = count
                     break
-                
+
                 return {
                     'total_memories': memory_count,
                     'total_scopes': len(scopes),
@@ -560,13 +557,13 @@ class AzureCosmosStorage(BaseStorage):
         """Ensure connection with automatic reconnection."""
         if self._container:
             return
-        
+
         self._connect_with_retry()
 
     def _connect_with_retry(self) -> None:
         """Connect with retry logic and exponential backoff."""
         max_retries = self.config.retry_total
-        
+
         for attempt in range(max_retries):
             try:
                 self._establish_connection()
@@ -590,7 +587,7 @@ class AzureCosmosStorage(BaseStorage):
         if isinstance(credential, str):
             # Using access key
             self._client = CosmosClient(
-                self.config.endpoint, 
+                self.config.endpoint,
                 credential,
                 consistency_level=self.config.consistency_level,
                 request_timeout=self.config.request_timeout,
@@ -599,7 +596,7 @@ class AzureCosmosStorage(BaseStorage):
         else:
             # Using credential object (Entra ID)
             self._client = CosmosClient(
-                self.config.endpoint, 
+                self.config.endpoint,
                 credential,
                 consistency_level=self.config.consistency_level,
                 request_timeout=self.config.request_timeout,
@@ -608,7 +605,7 @@ class AzureCosmosStorage(BaseStorage):
 
         # Get database reference
         self._database = self._client.get_database_client(self.config.database_name)
-        
+
         # Get or create container
         if self.config.auto_create_container:
             try:
@@ -637,7 +634,7 @@ class AzureCosmosStorage(BaseStorage):
         """Store a memory in Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             memory_data = {
                 'id': memory_id,
                 'content': content,
@@ -647,9 +644,9 @@ class AzureCosmosStorage(BaseStorage):
                 'updated_at': time.time(),
                 'memory_type': 'conversation_memory'
             }
-            
+
             self._container.create_item(body=memory_data)
-            
+
             # Add to audit log
             audit_entry = {
                 'id': f"audit_{memory_id}_{uuid.uuid4()}",
@@ -663,7 +660,7 @@ class AzureCosmosStorage(BaseStorage):
                 self._container.create_item(body=audit_entry)
             except Exception as audit_error:
                 logger.warning(f"Failed to create audit entry: {audit_error}")
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to store memory {memory_id}: {e}")
@@ -673,7 +670,7 @@ class AzureCosmosStorage(BaseStorage):
         """Retrieve a memory from Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             try:
                 item = self._container.read_item(item=memory_id, partition_key=memory_id)
                 if item.get('memory_type') == 'conversation_memory':
@@ -689,17 +686,17 @@ class AzureCosmosStorage(BaseStorage):
         """Delete a memory from Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             # Get memory data first for audit log
             memory_data = self.retrieve_memory(memory_id)
             if not memory_data:
                 return False
-            
+
             scope = memory_data.get('scope', 'default')
-            
+
             # Delete the memory
             self._container.delete_item(item=memory_id, partition_key=memory_id)
-            
+
             # Add to audit log
             audit_entry = {
                 'id': f"audit_{memory_id}_{uuid.uuid4()}",
@@ -713,7 +710,7 @@ class AzureCosmosStorage(BaseStorage):
                 self._container.create_item(body=audit_entry)
             except Exception as audit_error:
                 logger.warning(f"Failed to create audit entry: {audit_error}")
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
@@ -727,14 +724,14 @@ class AzureCosmosStorage(BaseStorage):
         """List memory IDs from Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             if scope:
                 query = "SELECT c.id FROM c WHERE c.scope = @scope AND c.memory_type = 'conversation_memory'"
                 parameters = [{"name": "@scope", "value": scope}]
             else:
                 query = "SELECT c.id FROM c WHERE c.memory_type = 'conversation_memory'"
                 parameters = []
-            
+
             memory_ids = []
             for item in self._container.query_items(
                 query=query,
@@ -745,7 +742,7 @@ class AzureCosmosStorage(BaseStorage):
                 memory_ids.append(item['id'])
                 if limit and len(memory_ids) >= limit:
                     break
-            
+
             return memory_ids
         except Exception as e:
             logger.error(f"Failed to list memories: {e}")
@@ -760,15 +757,15 @@ class AzureCosmosStorage(BaseStorage):
         """Search memories by content in Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             # Build search query with CONTAINS for text search
             base_query = "SELECT c.id FROM c WHERE CONTAINS(LOWER(c.content), @query) AND c.memory_type = 'conversation_memory'"
             parameters = [{"name": "@query", "value": query.lower()}]
-            
+
             if scope:
                 base_query += " AND c.scope = @scope"
                 parameters.append({"name": "@scope", "value": scope})
-            
+
             matching_ids = []
             for item in self._container.query_items(
                 query=base_query,
@@ -779,7 +776,7 @@ class AzureCosmosStorage(BaseStorage):
                 matching_ids.append(item['id'])
                 if limit and len(matching_ids) >= limit:
                     break
-            
+
             return matching_ids
         except Exception as e:
             logger.error(f"Failed to search memories: {e}")
@@ -793,14 +790,14 @@ class AzureCosmosStorage(BaseStorage):
         """Get audit log entries from Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             if memory_id:
                 query = "SELECT * FROM c WHERE c.memory_id = @memory_id AND c.memory_type = 'audit_log' ORDER BY c.timestamp DESC"
                 parameters = [{"name": "@memory_id", "value": memory_id}]
             else:
                 query = "SELECT * FROM c WHERE c.memory_type = 'audit_log' ORDER BY c.timestamp DESC"
                 parameters = []
-            
+
             audit_entries = []
             for item in self._container.query_items(
                 query=query,
@@ -811,7 +808,7 @@ class AzureCosmosStorage(BaseStorage):
                 audit_entries.append(item)
                 if limit and len(audit_entries) >= limit:
                     break
-            
+
             return audit_entries
         except Exception as e:
             logger.error(f"Failed to get audit log: {e}")
@@ -821,27 +818,27 @@ class AzureCosmosStorage(BaseStorage):
         """Get storage statistics from Azure Cosmos DB with resilience."""
         try:
             self._ensure_connection()
-            
+
             # Count total memories
             memory_query = "SELECT VALUE COUNT(1) FROM c WHERE c.memory_type = 'conversation_memory'"
             memory_count = 0
             for count in self._container.query_items(query=memory_query, enable_cross_partition_query=True):
                 memory_count = count
                 break
-            
+
             # Count unique scopes
             scope_query = "SELECT DISTINCT VALUE c.scope FROM c WHERE c.memory_type = 'conversation_memory'"
             scopes = []
             for scope in self._container.query_items(query=scope_query, enable_cross_partition_query=True):
                 scopes.append(scope)
-            
+
             # Count audit entries
             audit_query = "SELECT VALUE COUNT(1) FROM c WHERE c.memory_type = 'audit_log'"
             audit_count = 0
             for count in self._container.query_items(query=audit_query, enable_cross_partition_query=True):
                 audit_count = count
                 break
-            
+
             return {
                 'total_memories': memory_count,
                 'total_scopes': len(scopes),

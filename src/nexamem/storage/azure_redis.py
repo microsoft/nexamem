@@ -17,7 +17,7 @@ except ImportError:
     redis_async = None
 
 try:
-    from azure.identity import DefaultAzureCredential, ClientSecretCredential
+    from azure.identity import ClientSecretCredential, DefaultAzureCredential
     from azure.keyvault.secrets import SecretClient
 except ImportError:
     DefaultAzureCredential = None
@@ -31,9 +31,9 @@ except ImportError:
     AsyncDefaultAzureCredential = None
     AsyncSecretClient = None
 
-from ..config.storage import AzureRedisConfig, AzureAuthMethod
+from ..config.storage import AzureAuthMethod, AzureRedisConfig
 from ..memory_scope import MemoryScope
-from .base import BaseStorage, BaseAsyncStorage
+from .base import BaseAsyncStorage, BaseStorage
 
 
 class AzureRedisConnectionError(Exception):
@@ -43,7 +43,7 @@ class AzureRedisConnectionError(Exception):
 
 class AzureRedisHealthCheck:
     """Health check utilities for Azure Redis connections."""
-    
+
     @staticmethod
     async def async_health_check(client) -> Dict[str, Any]:
         """Perform comprehensive async health check."""
@@ -51,7 +51,7 @@ class AzureRedisHealthCheck:
             start_time = time.time()
             await client.ping()
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -63,7 +63,7 @@ class AzureRedisHealthCheck:
                 "error": str(e),
                 "error_type": type(e).__name__
             }
-    
+
     @staticmethod
     def sync_health_check(client) -> Dict[str, Any]:
         """Perform comprehensive sync health check."""
@@ -71,7 +71,7 @@ class AzureRedisHealthCheck:
             start_time = time.time()
             client.ping()
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -92,7 +92,6 @@ class AzureRedisCollections:
         self.client = client
         self.prefix = prefix
         # Better async detection - check if client is an AsyncMock or has async methods
-        import inspect
         self.is_async = (
             hasattr(client, '__class__') and 'AsyncMock' in str(type(client)) or
             (hasattr(client, 'ping') and inspect.iscoroutinefunction(client.ping))
@@ -538,7 +537,6 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         if self.config.use_collections:
             # Count from collections
             messages_hash = f"{self.config.collection_prefix}:messages:{scope.env}:{scope.agent_id}"
-            pattern = f"{scope.user_id}:{scope.session_id}:{channel}:*"
 
             # Get all matching message keys
             all_fields = await self._client.hkeys(messages_hash)
@@ -615,7 +613,7 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Store a memory in Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             memory_data = {
                 'content': content,
                 'metadata': metadata or {},
@@ -623,18 +621,18 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
                 'created_at': time.time(),
                 'updated_at': time.time()
             }
-            
+
             # Store in Redis hash
             await self._client.hset(
                 f"{self.config.collection_prefix}:memories",
                 memory_id,
                 json.dumps(memory_data)
             )
-            
+
             # Add to scope index if scope provided
             if scope:
                 await self._client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -646,7 +644,7 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
                 f"{self.config.collection_prefix}:audit",
                 audit_entry
             )
-            
+
             return True
         except Exception:
             return False
@@ -655,7 +653,7 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Retrieve a memory from Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             data = await self._client.hget(f"{self.config.collection_prefix}:memories", memory_id)
             if data:
                 return json.loads(data)
@@ -667,21 +665,21 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Delete a memory from Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             # Get memory data first to update scope index
             memory_data = await self.retrieve_memory(memory_id)
             if not memory_data:
                 return False
-            
+
             scope = memory_data.get('scope')
-            
+
             # Remove from main storage
             deleted = await self._client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
-            
+
             # Remove from scope index
             if scope:
                 await self._client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -693,7 +691,7 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
                 f"{self.config.collection_prefix}:audit",
                 audit_entry
             )
-            
+
             return deleted > 0
         except Exception:
             return False
@@ -706,17 +704,17 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """List memory IDs from Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             if scope:
                 # Get memories from scope index
                 memory_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
             else:
                 # Get all memory IDs
                 memory_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
+
             if limit:
                 memory_ids = memory_ids[:limit]
-            
+
             return memory_ids
         except Exception:
             return []
@@ -730,24 +728,24 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Search memories by content in Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             # Get candidate memory IDs
             if scope:
                 candidate_ids = list(await self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
             else:
                 candidate_ids = list(await self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
+
             matching_ids = []
             query_lower = query.lower()
-            
+
             for memory_id in candidate_ids:
                 memory_data = await self.retrieve_memory(memory_id)
                 if memory_data and query_lower in memory_data.get('content', '').lower():
                     matching_ids.append(memory_id)
-                    
+
                     if limit and len(matching_ids) >= limit:
                         break
-            
+
             return matching_ids
         except Exception:
             return []
@@ -760,21 +758,21 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Get audit log entries from Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             # Read from audit stream
             stream_name = f"{self.config.collection_prefix}:audit"
             entries = await self._client.xread({stream_name: 0}, count=limit or 100)
-            
+
             audit_entries = []
             for _stream, messages in entries:
                 for msg_id, fields in messages:
                     entry = dict(fields)
                     entry['id'] = msg_id
-                    
+
                     # Filter by memory_id if specified
                     if memory_id is None or entry.get('memory_id') == memory_id:
                         audit_entries.append(entry)
-            
+
             return audit_entries
         except Exception:
             return []
@@ -783,20 +781,20 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         """Get storage statistics from Azure Redis (async)."""
         try:
             await self.connect()
-            
+
             total_memories = await self._client.hlen(f"{self.config.collection_prefix}:memories")
-            
+
             # Count scopes
             scope_keys = await self._client.keys(f"{self.config.collection_prefix}:scope:*")
             total_scopes = len(scope_keys)
-            
+
             # Count audit entries
             try:
                 audit_info = await self._client.xinfo_stream(f"{self.config.collection_prefix}:audit")
                 audit_entries = audit_info.get('length', 0)
             except Exception:
                 audit_entries = 0
-            
+
             return {
                 'total_memories': total_memories,
                 'total_scopes': total_scopes,
@@ -1055,7 +1053,6 @@ class AzureRedisStorage(BaseStorage):
         if self.config.use_collections:
             # Count from collections
             messages_hash = f"{self.config.collection_prefix}:messages:{scope.env}:{scope.agent_id}"
-            pattern = f"{scope.user_id}:{scope.session_id}:{channel}:*"
 
             # Get all matching message keys
             all_fields = self._client.hkeys(messages_hash)
@@ -1132,7 +1129,7 @@ class AzureRedisStorage(BaseStorage):
         """Store a memory in Azure Redis."""
         try:
             self.connect()
-            
+
             memory_data = {
                 'content': content,
                 'metadata': metadata or {},
@@ -1140,18 +1137,18 @@ class AzureRedisStorage(BaseStorage):
                 'created_at': time.time(),
                 'updated_at': time.time()
             }
-            
+
             # Store in Redis hash
             self._client.hset(
                 f"{self.config.collection_prefix}:memories",
                 memory_id,
                 json.dumps(memory_data)
             )
-            
+
             # Add to scope index if scope provided
             if scope:
                 self._client.sadd(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -1163,7 +1160,7 @@ class AzureRedisStorage(BaseStorage):
                 f"{self.config.collection_prefix}:audit",
                 audit_entry
             )
-            
+
             return True
         except Exception:
             return False
@@ -1172,7 +1169,7 @@ class AzureRedisStorage(BaseStorage):
         """Retrieve a memory from Azure Redis."""
         try:
             self.connect()
-            
+
             data = self._client.hget(f"{self.config.collection_prefix}:memories", memory_id)
             if data:
                 return json.loads(data)
@@ -1184,21 +1181,21 @@ class AzureRedisStorage(BaseStorage):
         """Delete a memory from Azure Redis."""
         try:
             self.connect()
-            
+
             # Get memory data first to update scope index
             memory_data = self.retrieve_memory(memory_id)
             if not memory_data:
                 return False
-            
+
             scope = memory_data.get('scope')
-            
+
             # Remove from main storage
             deleted = self._client.hdel(f"{self.config.collection_prefix}:memories", memory_id)
-            
+
             # Remove from scope index
             if scope:
                 self._client.srem(f"{self.config.collection_prefix}:scope:{scope}", memory_id)
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -1210,7 +1207,7 @@ class AzureRedisStorage(BaseStorage):
                 f"{self.config.collection_prefix}:audit",
                 audit_entry
             )
-            
+
             return deleted > 0
         except Exception:
             return False
@@ -1223,75 +1220,75 @@ class AzureRedisStorage(BaseStorage):
         """List memory IDs from Azure Redis."""
         try:
             self.connect()
-            
+
             if scope:
                 # Get memories from scope index
                 memory_ids = list(self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
             else:
                 # Get all memory IDs
                 memory_ids = list(self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
+
             if limit:
                 memory_ids = memory_ids[:limit]
-            
+
             return memory_ids
         except Exception:
             return []
 
     def search_memories(
-        self, 
-        query: str, 
-        scope: Optional[str] = None, 
+        self,
+        query: str,
+        scope: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[str]:
         """Search memories by content in Azure Redis."""
         try:
             self.connect()
-            
+
             # Get candidate memory IDs
             if scope:
                 candidate_ids = list(self._client.smembers(f"{self.config.collection_prefix}:scope:{scope}"))
             else:
                 candidate_ids = list(self._client.hkeys(f"{self.config.collection_prefix}:memories"))
-            
+
             matching_ids = []
             query_lower = query.lower()
-            
+
             for memory_id in candidate_ids:
                 memory_data = self.retrieve_memory(memory_id)
                 if memory_data and query_lower in memory_data.get('content', '').lower():
                     matching_ids.append(memory_id)
-                    
+
                     if limit and len(matching_ids) >= limit:
                         break
-            
+
             return matching_ids
         except Exception:
             return []
 
     def get_audit_log(
-        self, 
-        memory_id: Optional[str] = None, 
+        self,
+        memory_id: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get audit log entries from Azure Redis."""
         try:
             self.connect()
-            
+
             # Read from audit stream
             stream_name = f"{self.config.collection_prefix}:audit"
             entries = self._client.xread({stream_name: 0}, count=limit or 100)
-            
+
             audit_entries = []
             for _stream, messages in entries:
                 for msg_id, fields in messages:
                     entry = dict(fields)
                     entry['id'] = msg_id
-                    
+
                     # Filter by memory_id if specified
                     if memory_id is None or entry.get('memory_id') == memory_id:
                         audit_entries.append(entry)
-            
+
             return audit_entries
         except Exception:
             return []
@@ -1300,20 +1297,20 @@ class AzureRedisStorage(BaseStorage):
         """Get storage statistics from Azure Redis."""
         try:
             self.connect()
-            
+
             total_memories = self._client.hlen(f"{self.config.collection_prefix}:memories")
-            
+
             # Count scopes
             scope_keys = self._client.keys(f"{self.config.collection_prefix}:scope:*")
             total_scopes = len(scope_keys)
-            
+
             # Count audit entries
             try:
                 audit_info = self._client.xinfo_stream(f"{self.config.collection_prefix}:audit")
                 audit_entries = audit_info.get('length', 0)
             except Exception:
                 audit_entries = 0
-            
+
             return {
                 'total_memories': total_memories,
                 'total_scopes': total_scopes,

@@ -1,12 +1,16 @@
 from collections import defaultdict
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from lagom import Container
-from nexamem.channels.channel import Channel
+
 from nexamem.channels.channel_factory import ChannelFactory
-from nexamem.schemas.memory_filter import MemoryFilter
 from nexamem.schemas.memory_entry import MemoryEntry
-from nexamem.storage_adapters.i_storage_adapter import IStorageAdapter
+from nexamem.schemas.memory_filter import MemoryFilter
+
+if TYPE_CHECKING:
+    from nexamem.channels.channel import Channel
+    from nexamem.storage_adapters.i_storage_adapter import IStorageAdapter
+
 
 class AIMemory:
     def __init__(self, channel_factory: ChannelFactory):
@@ -36,7 +40,7 @@ class AIMemory:
 
 
         return container[AIMemory]
-    
+
     @staticmethod
     def register_deps(container: Container) -> Container:
 
@@ -48,7 +52,7 @@ class AIMemory:
 
 
     async def write(self, entries: list[MemoryEntry]) -> None:
-        
+
         # loop the entries and write each one, handle pii, ttl etc as needed
         # group by channel and write in batches (pipelining)
 
@@ -61,16 +65,16 @@ class AIMemory:
                 (c for c in self._channels if c.name == channel_name), None)
             if not channel:
                 raise ValueError(f"Channel '{channel_name}' not found. Please register the channel first.")
-            
+
             #TODO: implement logic to handle PII, TTL, etc.
 
             storage: IStorageAdapter = channel.storage
 
             await storage.write(entries)
-            
-           
+
+
     async def read(self, filter: MemoryFilter) -> list[MemoryEntry]:
-        
+
         records: list[MemoryEntry] = []
         for channel_name in filter.channel_names:
             channel = next((c for c in self._channels if c.name == channel_name), None)
@@ -79,7 +83,7 @@ class AIMemory:
             storage: IStorageAdapter = channel.storage
             entries = await storage.read(filter)
             records.extend(entries)
-        
+
         return records
 
     # def register_channel(self, name: str, *, ttl_sec: int, encrypt: bool, quota_bytes: int | None = None, storage: IStorageAdapter) -> None

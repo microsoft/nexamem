@@ -1,10 +1,12 @@
-from typing import Type, Dict
+from typing import Dict, Type
 
 from lagom import Container
-from nexamem.storage_adapters.i_storage_adapter import IStorageAdapter
-from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
 
-class StorageAdapterFactory():
+from nexamem.storage_adapters.configs.i_storage_adapter_config import IStorageAdapterConfig
+from nexamem.storage_adapters.i_storage_adapter import IStorageAdapter
+
+
+class StorageAdapterFactory:
     """
     Factory for creating storage adapters based on type.
     Allows dynamic registration of new adapter types.

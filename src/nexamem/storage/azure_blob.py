@@ -8,13 +8,13 @@ import json
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Union
+from contextlib import asynccontextmanager, suppress
+from typing import Any, Dict, List, Optional
 
 try:
-    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-    from azure.storage.blob.aio import BlobServiceClient as AsyncBlobServiceClient
     from azure.core.exceptions import ResourceNotFoundError, ServiceRequestError
+    from azure.storage.blob import BlobClient, BlobServiceClient, ContainerClient
+    from azure.storage.blob.aio import BlobServiceClient as AsyncBlobServiceClient
 except ImportError:
     BlobServiceClient = None
     BlobClient = None
@@ -24,7 +24,7 @@ except ImportError:
     ServiceRequestError = Exception
 
 try:
-    from azure.identity import DefaultAzureCredential, ClientSecretCredential
+    from azure.identity import ClientSecretCredential, DefaultAzureCredential
     from azure.keyvault.secrets import SecretClient
 except ImportError:
     DefaultAzureCredential = None
@@ -38,9 +38,8 @@ except ImportError:
     AsyncDefaultAzureCredential = None
     AsyncSecretClient = None
 
-from ..config.storage import AzureBlobConfig, AzureAuthMethod
-from .base import BaseStorage, BaseAsyncStorage
-
+from ..config.storage import AzureAuthMethod, AzureBlobConfig
+from .base import BaseAsyncStorage, BaseStorage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -53,18 +52,18 @@ class AzureBlobConnectionError(Exception):
 
 class AzureBlobHealthCheck:
     """Health check utilities for Azure Blob Storage connections."""
-    
+
     @staticmethod
     async def async_health_check(container_client) -> Dict[str, Any]:
         """Perform comprehensive async health check."""
         try:
             start_time = time.time()
-            
+
             # Test connection by checking container properties
             properties = await container_client.get_container_properties()
-            
+
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -78,18 +77,18 @@ class AzureBlobHealthCheck:
                 "error": str(e),
                 "error_type": type(e).__name__
             }
-    
+
     @staticmethod
     def sync_health_check(container_client) -> Dict[str, Any]:
         """Perform comprehensive sync health check."""
         try:
             start_time = time.time()
-            
+
             # Test connection by checking container properties
             properties = container_client.get_container_properties()
-            
+
             latency = (time.time() - start_time) * 1000  # Convert to ms
-            
+
             return {
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
@@ -163,13 +162,13 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
             # Double-check after acquiring lock
             if self._container_client:
                 return
-            
+
             await self._connect_with_retry()
 
     async def _connect_with_retry(self) -> None:
         """Connect with retry logic and exponential backoff."""
         max_retries = 3
-        
+
         for attempt in range(max_retries):
             try:
                 await self._establish_connection()
@@ -191,10 +190,8 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
 
         # Close existing connection if any
         if self._service_client:
-            try:
+            with suppress(Exception):
                 await self._service_client.close()
-            except Exception:
-                pass
 
         # Create Blob service client
         if isinstance(credential, str):
@@ -212,7 +209,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
 
         # Get or create container
         self._container_client = self._service_client.get_container_client(self.config.container_name)
-        
+
         if self.config.auto_create_container:
             try:
                 await self._container_client.create_container()
@@ -268,22 +265,22 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     'updated_at': time.time(),
                     'memory_type': 'conversation_memory'
                 }
-                
+
                 # Store memory as blob
                 blob_name = self._get_blob_name(memory_id)
                 blob_client = container_client.get_blob_client(blob_name)
-                
+
                 await blob_client.upload_blob(
                     data=json.dumps(memory_data),
                     overwrite=True,
                     blob_type="BlockBlob",
                     tier=self.config.tier
                 )
-                
+
                 # Store metadata separately for easier querying
                 metadata_blob_name = self._get_metadata_blob_name(memory_id)
                 metadata_blob_client = container_client.get_blob_client(metadata_blob_name)
-                
+
                 metadata_info = {
                     'memory_id': memory_id,
                     'scope': scope or 'default',
@@ -292,14 +289,14 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     'content_size': len(content.encode('utf-8')),
                     'has_metadata': bool(metadata)
                 }
-                
+
                 await metadata_blob_client.upload_blob(
                     data=json.dumps(metadata_info),
                     overwrite=True,
                     blob_type="BlockBlob",
                     tier="Hot"  # Keep metadata in hot tier for faster access
                 )
-                
+
                 # Add to audit log
                 audit_entry = {
                     'memory_id': memory_id,
@@ -308,10 +305,10 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     'scope': scope or 'default',
                     'blob_name': blob_name
                 }
-                
+
                 audit_blob_name = self._get_blob_name(f"audit_{memory_id}_{uuid.uuid4()}", "audit")
                 audit_blob_client = container_client.get_blob_client(audit_blob_name)
-                
+
                 try:
                     await audit_blob_client.upload_blob(
                         data=json.dumps(audit_entry),
@@ -321,7 +318,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     )
                 except Exception as audit_error:
                     logger.warning(f"Failed to create audit entry: {audit_error}")
-                
+
                 return True
         except Exception as e:
             logger.error(f"Failed to store memory {memory_id}: {e}")
@@ -333,17 +330,17 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
             async with self._blob_operation() as container_client:
                 blob_name = self._get_blob_name(memory_id)
                 blob_client = container_client.get_blob_client(blob_name)
-                
+
                 try:
                     blob_data = await blob_client.download_blob()
                     content = await blob_data.readall()
                     memory_data = json.loads(content.decode('utf-8'))
-                    
+
                     if memory_data.get('memory_type') == 'conversation_memory':
                         return memory_data
                 except ResourceNotFoundError:
                     return None
-                
+
                 return None
         except Exception as e:
             logger.error(f"Failed to retrieve memory {memory_id}: {e}")
@@ -357,14 +354,14 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                 memory_data = await self.retrieve_memory(memory_id)
                 if not memory_data:
                     return False
-                
+
                 scope = memory_data.get('scope', 'default')
-                
+
                 # Delete the memory blob
                 blob_name = self._get_blob_name(memory_id)
                 blob_client = container_client.get_blob_client(blob_name)
                 await blob_client.delete_blob()
-                
+
                 # Delete the metadata blob
                 metadata_blob_name = self._get_metadata_blob_name(memory_id)
                 metadata_blob_client = container_client.get_blob_client(metadata_blob_name)
@@ -372,7 +369,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     await metadata_blob_client.delete_blob()
                 except ResourceNotFoundError:
                     pass  # Metadata blob might not exist
-                
+
                 # Add to audit log
                 audit_entry = {
                     'memory_id': memory_id,
@@ -381,10 +378,10 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     'scope': scope,
                     'blob_name': blob_name
                 }
-                
+
                 audit_blob_name = self._get_blob_name(f"audit_{memory_id}_{uuid.uuid4()}", "audit")
                 audit_blob_client = container_client.get_blob_client(audit_blob_name)
-                
+
                 try:
                     await audit_blob_client.upload_blob(
                         data=json.dumps(audit_entry),
@@ -394,7 +391,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                     )
                 except Exception as audit_error:
                     logger.warning(f"Failed to create audit entry: {audit_error}")
-                
+
                 return True
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
@@ -409,28 +406,28 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
         try:
             async with self._blob_operation() as container_client:
                 memory_ids = []
-                
+
                 # List metadata blobs to get memory info efficiently
                 metadata_prefix = f"{self.config.blob_prefix}/metadata/"
-                
+
                 async for blob in container_client.list_blobs(name_starts_with=metadata_prefix):
                     if limit and len(memory_ids) >= limit:
                         break
-                    
+
                     try:
                         # Download metadata blob to check scope
                         blob_client = container_client.get_blob_client(blob.name)
                         blob_data = await blob_client.download_blob()
                         content = await blob_data.readall()
                         metadata_info = json.loads(content.decode('utf-8'))
-                        
+
                         if scope is None or metadata_info.get('scope') == scope:
                             memory_ids.append(metadata_info['memory_id'])
-                    
+
                     except Exception as e:
                         logger.warning(f"Failed to process metadata blob {blob.name}: {e}")
                         continue
-                
+
                 return memory_ids
         except Exception as e:
             logger.error(f"Failed to list memories: {e}")
@@ -447,33 +444,33 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
             async with self._blob_operation() as container_client:
                 matching_ids = []
                 query_lower = query.lower()
-                
+
                 # List memory blobs and search content
                 memory_prefix = f"{self.config.blob_prefix}/memory/"
-                
+
                 async for blob in container_client.list_blobs(name_starts_with=memory_prefix):
                     if limit and len(matching_ids) >= limit:
                         break
-                    
+
                     try:
                         # Download blob to search content
                         blob_client = container_client.get_blob_client(blob.name)
                         blob_data = await blob_client.download_blob()
                         content = await blob_data.readall()
                         memory_data = json.loads(content.decode('utf-8'))
-                        
+
                         # Check scope filter
                         if scope and memory_data.get('scope') != scope:
                             continue
-                        
+
                         # Search in content
                         if query_lower in memory_data.get('content', '').lower():
                             matching_ids.append(memory_data['id'])
-                    
+
                     except Exception as e:
                         logger.warning(f"Failed to search blob {blob.name}: {e}")
                         continue
-                
+
                 return matching_ids
         except Exception as e:
             logger.error(f"Failed to search memories: {e}")
@@ -488,34 +485,34 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
         try:
             async with self._blob_operation() as container_client:
                 audit_entries = []
-                
+
                 # List audit blobs
                 audit_prefix = f"{self.config.blob_prefix}/audit/"
-                
+
                 async for blob in container_client.list_blobs(name_starts_with=audit_prefix):
                     if limit and len(audit_entries) >= limit:
                         break
-                    
+
                     try:
                         # Download audit blob
                         blob_client = container_client.get_blob_client(blob.name)
                         blob_data = await blob_client.download_blob()
                         content = await blob_data.readall()
                         audit_entry = json.loads(content.decode('utf-8'))
-                        
+
                         # Filter by memory_id if specified
                         if memory_id is None or audit_entry.get('memory_id') == memory_id:
                             audit_entry['blob_name'] = blob.name
                             audit_entry['blob_created'] = blob.creation_time.isoformat() if blob.creation_time else None
                             audit_entries.append(audit_entry)
-                    
+
                     except Exception as e:
                         logger.warning(f"Failed to process audit blob {blob.name}: {e}")
                         continue
-                
+
                 # Sort by timestamp (newest first)
                 audit_entries.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
-                
+
                 return audit_entries[:limit] if limit else audit_entries
         except Exception as e:
             logger.error(f"Failed to get audit log: {e}")
@@ -529,7 +526,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                 total_size = 0
                 scopes = set()
                 audit_count = 0
-                
+
                 # Count blobs by prefix
                 async for blob in container_client.list_blobs():
                     if blob.name.startswith(f"{self.config.blob_prefix}/memory/"):
@@ -537,7 +534,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                         total_size += blob.size or 0
                     elif blob.name.startswith(f"{self.config.blob_prefix}/audit/"):
                         audit_count += 1
-                
+
                 # Get scopes from metadata blobs (more efficient)
                 metadata_prefix = f"{self.config.blob_prefix}/metadata/"
                 async for blob in container_client.list_blobs(name_starts_with=metadata_prefix):
@@ -549,7 +546,7 @@ class AsyncAzureBlobStorage(BaseAsyncStorage):
                         scopes.add(metadata_info.get('scope', 'default'))
                     except Exception:
                         continue
-                
+
                 return {
                     'total_memories': total_memories,
                     'total_scopes': len(scopes),
@@ -653,13 +650,13 @@ class AzureBlobStorage(BaseStorage):
         """Ensure connection with automatic reconnection."""
         if self._container_client:
             return
-        
+
         self._connect_with_retry()
 
     def _connect_with_retry(self) -> None:
         """Connect with retry logic and exponential backoff."""
         max_retries = 3
-        
+
         for attempt in range(max_retries):
             try:
                 self._establish_connection()
@@ -695,7 +692,7 @@ class AzureBlobStorage(BaseStorage):
 
         # Get or create container
         self._container_client = self._service_client.get_container_client(self.config.container_name)
-        
+
         if self.config.auto_create_container:
             try:
                 self._container_client.create_container()
@@ -726,7 +723,7 @@ class AzureBlobStorage(BaseStorage):
         """Store a memory in Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             memory_data = {
                 'id': memory_id,
                 'content': content,
@@ -736,21 +733,21 @@ class AzureBlobStorage(BaseStorage):
                 'updated_at': time.time(),
                 'memory_type': 'conversation_memory'
             }
-            
+
             # Store memory as blob
             blob_name = self._get_blob_name(memory_id)
             blob_client = self._container_client.get_blob_client(blob_name)
-            
+
             blob_client.upload_blob(
                 data=json.dumps(memory_data),
                 overwrite=True,
                 blob_type="BlockBlob"
             )
-            
+
             # Store metadata separately for easier querying
             metadata_blob_name = self._get_metadata_blob_name(memory_id)
             metadata_blob_client = self._container_client.get_blob_client(metadata_blob_name)
-            
+
             metadata_info = {
                 'memory_id': memory_id,
                 'scope': scope or 'default',
@@ -759,13 +756,13 @@ class AzureBlobStorage(BaseStorage):
                 'content_size': len(content.encode('utf-8')),
                 'has_metadata': bool(metadata)
             }
-            
+
             metadata_blob_client.upload_blob(
                 data=json.dumps(metadata_info),
                 overwrite=True,
                 blob_type="BlockBlob"
             )
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -774,10 +771,10 @@ class AzureBlobStorage(BaseStorage):
                 'scope': scope or 'default',
                 'blob_name': blob_name
             }
-            
+
             audit_blob_name = self._get_blob_name(f"audit_{memory_id}_{uuid.uuid4()}", "audit")
             audit_blob_client = self._container_client.get_blob_client(audit_blob_name)
-            
+
             try:
                 audit_blob_client.upload_blob(
                     data=json.dumps(audit_entry),
@@ -786,7 +783,7 @@ class AzureBlobStorage(BaseStorage):
                 )
             except Exception as audit_error:
                 logger.warning(f"Failed to create audit entry: {audit_error}")
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to store memory {memory_id}: {e}")
@@ -796,20 +793,20 @@ class AzureBlobStorage(BaseStorage):
         """Retrieve a memory from Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             blob_name = self._get_blob_name(memory_id)
             blob_client = self._container_client.get_blob_client(blob_name)
-            
+
             try:
                 blob_data = blob_client.download_blob()
                 content = blob_data.readall()
                 memory_data = json.loads(content.decode('utf-8'))
-                
+
                 if memory_data.get('memory_type') == 'conversation_memory':
                     return memory_data
             except ResourceNotFoundError:
                 return None
-            
+
             return None
         except Exception as e:
             logger.error(f"Failed to retrieve memory {memory_id}: {e}")
@@ -819,19 +816,19 @@ class AzureBlobStorage(BaseStorage):
         """Delete a memory from Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             # Get memory data first for audit log
             memory_data = self.retrieve_memory(memory_id)
             if not memory_data:
                 return False
-            
+
             scope = memory_data.get('scope', 'default')
-            
+
             # Delete the memory blob
             blob_name = self._get_blob_name(memory_id)
             blob_client = self._container_client.get_blob_client(blob_name)
             blob_client.delete_blob()
-            
+
             # Delete the metadata blob
             metadata_blob_name = self._get_metadata_blob_name(memory_id)
             metadata_blob_client = self._container_client.get_blob_client(metadata_blob_name)
@@ -839,7 +836,7 @@ class AzureBlobStorage(BaseStorage):
                 metadata_blob_client.delete_blob()
             except ResourceNotFoundError:
                 pass  # Metadata blob might not exist
-            
+
             # Add to audit log
             audit_entry = {
                 'memory_id': memory_id,
@@ -848,10 +845,10 @@ class AzureBlobStorage(BaseStorage):
                 'scope': scope,
                 'blob_name': blob_name
             }
-            
+
             audit_blob_name = self._get_blob_name(f"audit_{memory_id}_{uuid.uuid4()}", "audit")
             audit_blob_client = self._container_client.get_blob_client(audit_blob_name)
-            
+
             try:
                 audit_blob_client.upload_blob(
                     data=json.dumps(audit_entry),
@@ -860,7 +857,7 @@ class AzureBlobStorage(BaseStorage):
                 )
             except Exception as audit_error:
                 logger.warning(f"Failed to create audit entry: {audit_error}")
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
@@ -874,30 +871,30 @@ class AzureBlobStorage(BaseStorage):
         """List memory IDs from Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             memory_ids = []
-            
+
             # List metadata blobs to get memory info efficiently
             metadata_prefix = f"{self.config.blob_prefix}/metadata/"
-            
+
             for blob in self._container_client.list_blobs(name_starts_with=metadata_prefix):
                 if limit and len(memory_ids) >= limit:
                     break
-                
+
                 try:
                     # Download metadata blob to check scope
                     blob_client = self._container_client.get_blob_client(blob.name)
                     blob_data = blob_client.download_blob()
                     content = blob_data.readall()
                     metadata_info = json.loads(content.decode('utf-8'))
-                    
+
                     if scope is None or metadata_info.get('scope') == scope:
                         memory_ids.append(metadata_info['memory_id'])
-                
+
                 except Exception as e:
                     logger.warning(f"Failed to process metadata blob {blob.name}: {e}")
                     continue
-            
+
             return memory_ids
         except Exception as e:
             logger.error(f"Failed to list memories: {e}")
@@ -912,36 +909,36 @@ class AzureBlobStorage(BaseStorage):
         """Search memories by content in Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             matching_ids = []
             query_lower = query.lower()
-            
+
             # List memory blobs and search content
             memory_prefix = f"{self.config.blob_prefix}/memory/"
-            
+
             for blob in self._container_client.list_blobs(name_starts_with=memory_prefix):
                 if limit and len(matching_ids) >= limit:
                     break
-                
+
                 try:
                     # Download blob to search content
                     blob_client = self._container_client.get_blob_client(blob.name)
                     blob_data = blob_client.download_blob()
                     content = blob_data.readall()
                     memory_data = json.loads(content.decode('utf-8'))
-                    
+
                     # Check scope filter
                     if scope and memory_data.get('scope') != scope:
                         continue
-                    
+
                     # Search in content
                     if query_lower in memory_data.get('content', '').lower():
                         matching_ids.append(memory_data['id'])
-                
+
                 except Exception as e:
                     logger.warning(f"Failed to search blob {blob.name}: {e}")
                     continue
-            
+
             return matching_ids
         except Exception as e:
             logger.error(f"Failed to search memories: {e}")
@@ -955,36 +952,36 @@ class AzureBlobStorage(BaseStorage):
         """Get audit log entries from Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             audit_entries = []
-            
+
             # List audit blobs
             audit_prefix = f"{self.config.blob_prefix}/audit/"
-            
+
             for blob in self._container_client.list_blobs(name_starts_with=audit_prefix):
                 if limit and len(audit_entries) >= limit:
                     break
-                
+
                 try:
                     # Download audit blob
                     blob_client = self._container_client.get_blob_client(blob.name)
                     blob_data = blob_client.download_blob()
                     content = blob_data.readall()
                     audit_entry = json.loads(content.decode('utf-8'))
-                    
+
                     # Filter by memory_id if specified
                     if memory_id is None or audit_entry.get('memory_id') == memory_id:
                         audit_entry['blob_name'] = blob.name
                         audit_entry['blob_created'] = blob.creation_time.isoformat() if blob.creation_time else None
                         audit_entries.append(audit_entry)
-                
+
                 except Exception as e:
                     logger.warning(f"Failed to process audit blob {blob.name}: {e}")
                     continue
-            
+
             # Sort by timestamp (newest first)
             audit_entries.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
-            
+
             return audit_entries[:limit] if limit else audit_entries
         except Exception as e:
             logger.error(f"Failed to get audit log: {e}")
@@ -994,12 +991,12 @@ class AzureBlobStorage(BaseStorage):
         """Get storage statistics from Azure Blob Storage with resilience."""
         try:
             self._ensure_connection()
-            
+
             total_memories = 0
             total_size = 0
             scopes = set()
             audit_count = 0
-            
+
             # Count blobs by prefix
             for blob in self._container_client.list_blobs():
                 if blob.name.startswith(f"{self.config.blob_prefix}/memory/"):
@@ -1007,7 +1004,7 @@ class AzureBlobStorage(BaseStorage):
                     total_size += blob.size or 0
                 elif blob.name.startswith(f"{self.config.blob_prefix}/audit/"):
                     audit_count += 1
-            
+
             # Get scopes from metadata blobs (more efficient)
             metadata_prefix = f"{self.config.blob_prefix}/metadata/"
             for blob in self._container_client.list_blobs(name_starts_with=metadata_prefix):
@@ -1019,7 +1016,7 @@ class AzureBlobStorage(BaseStorage):
                     scopes.add(metadata_info.get('scope', 'default'))
                 except Exception:
                     continue
-            
+
             return {
                 'total_memories': total_memories,
                 'total_scopes': len(scopes),

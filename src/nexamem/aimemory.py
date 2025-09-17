@@ -5,15 +5,15 @@ Main AIMemory class implementing the requirements specification.
 Please migrate to the new DI-based AIMemory API. See LEGACY_API.md for migration guidance.
 """
 import time
-from typing import List, Dict, Optional, Tuple, Union, Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from .memory_scope import MemoryScope
-from .channels.channels import ChannelManager, ChannelConfig
-from .policy import PolicyEngine
-from .redis_adapter import RedisAdapter, AsyncRedisAdapter
-from .content_processor import ContentProcessorChain
-from .audit import AuditSink
 from . import metrics
+from .audit import AuditSink
+from .channels.channels import ChannelConfig, ChannelManager
+from .content_processor import ContentProcessorChain
+from .memory_scope import MemoryScope
+from .policy import PolicyEngine
+from .redis_adapter import AsyncRedisAdapter, RedisAdapter
 
 
 class AIMemoryError(Exception):
@@ -30,11 +30,11 @@ class AIMemory:
     """
     Main AIMemory facade implementing Redis-backed conversational memory.
     Provides governed memory with channels, policies, and scope-based access.
-    
+
     ⚠️  DEPRECATED: This class is deprecated and will be removed in a future version.
     Please migrate to the new DI-based AIMemory API. See LEGACY_API.md for migration guidance.
     """
-    
+
     def __init__(
         self,
         redis_host: str = "localhost",
@@ -52,7 +52,7 @@ class AIMemory:
     ):
         """
         Initialize AIMemory.
-        
+
         Args:
             redis_host: Redis server hostname
             redis_port: Redis server port
@@ -77,23 +77,23 @@ class AIMemory:
             use_fakeredis=use_fakeredis,
             **redis_kwargs
         )
-        
+
         # Initialize channel manager
         self.channels = ChannelManager(channels_yaml, strict_validation=strict_yaml_validation)
-        
+
         # Initialize policy engine
         self.policy = PolicyEngine()
-        
+
         # Initialize audit sink
         self.audit = AuditSink(self.redis) if enable_audit else None
-        
+
         # Initialize content processor chain
         self.content_processor = ContentProcessorChain() if enable_content_processing else None
-        
+
         # Enable/disable metrics
         if not enable_metrics:
             metrics.get_metrics().disable()
-    
+
     def write(
         self,
         scope: MemoryScope,
@@ -106,7 +106,7 @@ class AIMemory:
     ) -> str:
         """
         Write content to a memory channel.
-        
+
         Args:
             scope: Memory scope defining key structure
             channel: Channel name
@@ -114,34 +114,33 @@ class AIMemory:
             pii: Explicitly mark as PII
             ttl_override: Override channel TTL (must not exceed channel limit)
             auto_pii: Auto-detect PII in content
-            
+
         Returns:
             Message UUID
-            
+
         Raises:
             ChannelNotFound: If channel doesn't exist
             PolicyViolation: If any policy is violated
         """
         start_time = time.time()
         success = False
-        
+
         try:
             # Get channel configuration
             channel_config = self.channels.get_channel(channel)
             if not channel_config:
                 raise ChannelNotFound(f"Channel '{channel}' not found")
-            
+
             # Process content through chain if enabled
             processed_content = content
             content_metadata = {}
-            
-            if self.content_processor and auto_pii:
-                if isinstance(content, str):
-                    processed_content, content_metadata = self.content_processor.process(content)
-                    # Update auto_pii based on detection
-                    if content_metadata.get('pii_detected'):
-                        auto_pii = True
-            
+
+            if self.content_processor and auto_pii and isinstance(content, str):
+                processed_content, content_metadata = self.content_processor.process(content)
+                # Update auto_pii based on detection
+                if content_metadata.get('pii_detected'):
+                    auto_pii = True
+
             # Validate against policies
             validation_result = self.policy.validate_write(
                 content=processed_content,
@@ -151,7 +150,7 @@ class AIMemory:
                 ttl_override=ttl_override,
                 auto_pii=auto_pii
             )
-            
+
             # Write to Redis
             message_uuid = self.redis.write_message(
                 scope=scope,
@@ -165,16 +164,16 @@ class AIMemory:
                     **content_metadata
                 }
             )
-            
+
             # Update quotas
             self.policy.post_write_update(
                 validation_result["content_bytes"],
                 scope.model_dump(),
                 channel
             )
-            
+
             success = True
-            
+
             # Log to audit stream
             if self.audit:
                 self.audit.log_operation(
@@ -188,14 +187,14 @@ class AIMemory:
                         "ttl_sec": validation_result["effective_ttl"]
                     }
                 )
-            
+
             return message_uuid
-            
+
         finally:
             # Record metrics
             duration = time.time() - start_time
             metrics.record_write_operation(channel, success, duration)
-    
+
     def read(
         self,
         scope: MemoryScope,
@@ -208,7 +207,7 @@ class AIMemory:
     ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Read messages from a memory channel.
-        
+
         Args:
             scope: Memory scope
             channel: Channel name
@@ -216,27 +215,27 @@ class AIMemory:
             max_bytes: Maximum total bytes
             max_msgs: Maximum number of messages
             max_tokens: Maximum total tokens (not implemented in MVP)
-            
+
         Returns:
             Tuple of (messages, metadata)
-            
+
         Raises:
             ChannelNotFound: If channel doesn't exist
         """
         start_time = time.time()
         success = False
-        
+
         try:
             # Verify channel exists
             if not self.channels.channel_exists(channel):
                 raise ChannelNotFound(f"Channel '{channel}' not found")
-            
+
             # TODO: Implement token-based truncation when max_tokens is specified
             # NOTE: This is legacy code - new API handles this differently
             if max_tokens is not None:
                 # For MVP, ignore max_tokens and add to metadata
                 pass
-            
+
             messages, metadata = self.redis.read_messages(
                 scope=scope,
                 channel=channel,
@@ -244,14 +243,14 @@ class AIMemory:
                 max_msgs=max_msgs,
                 max_bytes=max_bytes
             )
-            
+
             # Add token info to metadata (placeholder for MVP)
             if max_tokens is not None:
                 metadata["max_tokens_requested"] = max_tokens
                 metadata["token_truncation"] = "not_implemented_in_mvp"
-            
+
             success = True
-            
+
             # Log to audit stream
             if self.audit:
                 self.audit.log_operation(
@@ -266,18 +265,18 @@ class AIMemory:
                         "max_bytes": max_bytes
                     }
                 )
-            
+
             return messages, metadata
-            
+
         finally:
             # Record metrics
             duration = time.time() - start_time
             metrics.record_read_operation(channel, success, duration)
-    
+
     def checkpoint(self, scope: MemoryScope, key: str, payload: dict) -> None:
         """
         Set a checkpoint value.
-        
+
         Args:
             scope: Memory scope
             key: Checkpoint key
@@ -285,11 +284,11 @@ class AIMemory:
         """
         start_time = time.time()
         success = False
-        
+
         try:
             self.redis.checkpoint_set(scope, key, payload)
             success = True
-            
+
             # Log to audit stream
             if self.audit:
                 self.audit.log_operation(
@@ -304,7 +303,7 @@ class AIMemory:
             # Record metrics
             duration = time.time() - start_time
             metrics.record_checkpoint_operation("set", success, duration)
-    
+
     def checkpoint_atomic(
         self,
         scope: MemoryScope,
@@ -313,59 +312,59 @@ class AIMemory:
     ) -> dict:
         """
         Atomically update a checkpoint value.
-        
+
         Args:
             scope: Memory scope
             key: Checkpoint key
             update_fn: Function to update the value
-            
+
         Returns:
             Updated payload
-            
+
         Note: For MVP, this is not truly atomic. Production would use Redis Lua scripts.
         """
         # Get current value
         current = self.redis.checkpoint_get(scope, key)
-        
+
         # Apply update function
         updated = update_fn(current)
-        
+
         # Store updated value
         self.redis.checkpoint_set(scope, key, updated)
-        
+
         return updated
-    
+
     def bulk_erase(self, scope: MemoryScope) -> int:
         """
         Erase all messages for a scope across all channels.
-        
+
         Args:
             scope: Memory scope
-            
+
         Returns:
             Number of keys deleted
         """
         return self.redis.bulk_erase(scope)
-    
+
     def count_bytes(self, scope: MemoryScope, channel: str) -> int:
         """
         Count total bytes for a scope and channel.
-        
+
         Args:
             scope: Memory scope
             channel: Channel name
-            
+
         Returns:
             Total bytes
-            
+
         Raises:
             ChannelNotFound: If channel doesn't exist
         """
         if not self.channels.channel_exists(channel):
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         return self.redis.count_bytes(scope, channel)
-    
+
     def register_channel(
         self,
         name: str,
@@ -376,13 +375,13 @@ class AIMemory:
     ) -> None:
         """
         Register a new channel at runtime.
-        
+
         Args:
             name: Channel name (snake_case)
             ttl_sec: Time-to-live in seconds (max 7 days)
             encrypt: Enable client-side encryption
             quota_bytes: Optional daily quota in bytes
-            
+
         Raises:
             ChannelAlreadyExists: If channel already exists
         """
@@ -392,11 +391,11 @@ class AIMemory:
             encrypt=encrypt,
             quota_bytes=quota_bytes
         )
-    
+
     def list_channels(self) -> Dict[str, ChannelConfig]:
         """List all registered channels."""
         return self.channels.list_channels()
-    
+
     def get_channel_config(self, name: str) -> Optional[ChannelConfig]:
         """Get configuration for a specific channel."""
         return self.channels.get_channel(name)
@@ -405,11 +404,11 @@ class AIMemory:
 class AsyncAIMemory:
     """
     Asynchronous version of AIMemory for high-throughput scenarios.
-    
+
     ⚠️  DEPRECATED: This class is deprecated and will be removed in a future version.
     Please migrate to the new DI-based AsyncAIMemory API. See LEGACY_API.md for migration guidance.
     """
-    
+
     def __init__(
         self,
         redis_host: str = "localhost",
@@ -430,13 +429,13 @@ class AsyncAIMemory:
             db=redis_db,
             **redis_kwargs
         )
-        
+
         # Initialize channel manager (sync)
         self.channels = ChannelManager(channels_yaml)
-        
+
         # Initialize policy engine (sync)
         self.policy = PolicyEngine()
-    
+
     async def write(
         self,
         scope: MemoryScope,
@@ -451,7 +450,7 @@ class AsyncAIMemory:
         channel_config = self.channels.get_channel(channel)
         if not channel_config:
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         validation_result = self.policy.validate_write(
             content=content,
             channel_config=channel_config,
@@ -460,7 +459,7 @@ class AsyncAIMemory:
             ttl_override=ttl_override,
             auto_pii=auto_pii
         )
-        
+
         message_uuid = await self.redis.write_message(
             scope=scope,
             channel=channel,
@@ -472,15 +471,15 @@ class AsyncAIMemory:
                 "requires_encryption": validation_result["requires_encryption"]
             }
         )
-        
+
         self.policy.post_write_update(
             validation_result["content_bytes"],
             scope.model_dump(),
             channel
         )
-        
+
         return message_uuid
-    
+
     async def read(
         self,
         scope: MemoryScope,
@@ -494,7 +493,7 @@ class AsyncAIMemory:
         """Async version of read."""
         if not self.channels.channel_exists(channel):
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         messages, metadata = await self.redis.read_messages(
             scope=scope,
             channel=channel,
@@ -502,17 +501,17 @@ class AsyncAIMemory:
             max_msgs=max_msgs,
             max_bytes=max_bytes
         )
-        
+
         if max_tokens is not None:
             metadata["max_tokens_requested"] = max_tokens
             metadata["token_truncation"] = "not_implemented_in_mvp"
-        
+
         return messages, metadata
-    
+
     async def checkpoint(self, scope: MemoryScope, key: str, payload: dict) -> None:
         """Async version of checkpoint."""
         await self.redis.checkpoint_set(scope, key, payload)
-    
+
     async def checkpoint_atomic(
         self,
         scope: MemoryScope,
@@ -524,18 +523,18 @@ class AsyncAIMemory:
         updated = update_fn(current)
         await self.redis.checkpoint_set(scope, key, updated)
         return updated
-    
+
     async def bulk_erase(self, scope: MemoryScope) -> int:
         """Async version of bulk_erase."""
         return await self.redis.bulk_erase(scope)
-    
+
     async def count_bytes(self, scope: MemoryScope, channel: str) -> int:
         """Async version of count_bytes."""
         if not self.channels.channel_exists(channel):
             raise ChannelNotFound(f"Channel '{channel}' not found")
-        
+
         return await self.redis.count_bytes(scope, channel)
-    
+
     def register_channel(
         self,
         name: str,
@@ -551,15 +550,15 @@ class AsyncAIMemory:
             encrypt=encrypt,
             quota_bytes=quota_bytes
         )
-    
+
     def list_channels(self) -> Dict[str, ChannelConfig]:
         """List all registered channels (sync operation)."""
         return self.channels.list_channels()
-    
+
     def get_channel_config(self, name: str) -> Optional[ChannelConfig]:
         """Get channel configuration (sync operation)."""
         return self.channels.get_channel(name)
-    
+
     async def close(self):
         """Close the async Redis connection."""
         await self.redis.close()

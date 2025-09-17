@@ -4,7 +4,7 @@ from abc import ABC
 
 import pytest
 
-from nexamem.storage.base import BaseStorage, BaseAsyncStorage
+from nexamem.storage.base import BaseAsyncStorage, BaseStorage
 
 
 def test_base_storage_is_abstract():

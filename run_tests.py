@@ -15,7 +15,7 @@ def run_command(cmd, description):
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}")
-    
+
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         print("✅ SUCCESS")
@@ -34,19 +34,19 @@ def main():
     # Change to project directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
-    
+
     print("NexaMem Test Runner")
     print(f"Working directory: {os.getcwd()}")
-    
+
     # Check Python version
     print(f"Python version: {sys.version}")
-    
+
     # Install test dependencies
     if not run_command([
         sys.executable, "-m", "pip", "install", "-r", "requirements-test.txt"
     ], "Installing test dependencies"):
         return 1
-    
+
     # Run all tests
     if not run_command([
         sys.executable, "-m", "pytest", "tests/", "-v",
@@ -67,7 +67,7 @@ def main():
         "--cov=nexamem", "--cov-report=term-missing", "--cov-report=xml"
     ], "Running tests with coverage"):
         return 1
-    
+
     print("\n🎉 All tests passed successfully!")
     return 0
 
