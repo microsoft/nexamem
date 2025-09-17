@@ -6,7 +6,7 @@ from ..config.storage import StorageConfig
 from .azure_redis import AsyncAzureRedisStorage, AzureRedisStorage
 from .azure_cosmos import AsyncAzureCosmosStorage, AzureCosmosStorage
 from .azure_blob import AsyncAzureBlobStorage, AzureBlobStorage
-from .azure_ai_search import AsyncAzureAISearchStorage
+from .azure_ai_search import AsyncAzureAISearchStorage, AzureAISearchStorage
 from .base import BaseAsyncStorage, BaseStorage
 from .file import AsyncFileStorage, FileStorage
 from .memory import AsyncMemoryStorage, MemoryStorage
@@ -26,7 +26,7 @@ class StorageFactory:
         elif config.type.value == "azure_blob":
             return AzureBlobStorage(config.config)
         elif config.type.value == "azure_ai_search":
-            raise NotImplementedError("Sync Azure AI Search storage not implemented yet. Use async version.")
+            return AzureAISearchStorage(config.config)
         elif config.type.value == "memory":
             return MemoryStorage()
         elif config.type.value == "file":

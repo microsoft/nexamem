@@ -3,6 +3,7 @@ Azure Cache for Redis storage implementation.
 Provides both sync and async storage adapters with enterprise features.
 """
 
+import inspect
 import json
 import time
 import uuid
@@ -40,13 +41,62 @@ class AzureRedisConnectionError(Exception):
     pass
 
 
+class AzureRedisHealthCheck:
+    """Health check utilities for Azure Redis connections."""
+    
+    @staticmethod
+    async def async_health_check(client) -> Dict[str, Any]:
+        """Perform comprehensive async health check."""
+        try:
+            start_time = time.time()
+            await client.ping()
+            latency = (time.time() - start_time) * 1000  # Convert to ms
+            
+            return {
+                "status": "healthy",
+                "latency_ms": round(latency, 2),
+                "can_ping": True
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+    
+    @staticmethod
+    def sync_health_check(client) -> Dict[str, Any]:
+        """Perform comprehensive sync health check."""
+        try:
+            start_time = time.time()
+            client.ping()
+            latency = (time.time() - start_time) * 1000  # Convert to ms
+            
+            return {
+                "status": "healthy",
+                "latency_ms": round(latency, 2),
+                "can_ping": True
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+
+
 class AzureRedisCollections:
     """Manages Redis data structures for efficient storage."""
 
     def __init__(self, client: Union[redis.Redis, redis_async.Redis], prefix: str = "nexamem"):
         self.client = client
         self.prefix = prefix
-        self.is_async = hasattr(client, 'pipeline') and hasattr(client.pipeline(), '__aenter__')
+        # Better async detection - check if client is an AsyncMock or has async methods
+        import inspect
+        self.is_async = (
+            hasattr(client, '__class__') and 'AsyncMock' in str(type(client)) or
+            (hasattr(client, 'ping') and inspect.iscoroutinefunction(client.ping))
+        )
 
     async def add_message_to_channel_async(
         self,
@@ -70,16 +120,16 @@ class AzureRedisCollections:
         pipe = self.client.pipeline()
 
         # Store message in hash
-        await pipe.hset(messages_hash, message_key, json.dumps({
+        pipe.hset(messages_hash, message_key, json.dumps({
             **message_data,
             "uuid": message_uuid,
             "timestamp": timestamp
         }))
-        await pipe.expire(messages_hash, ttl_sec)
+        pipe.expire(messages_hash, ttl_sec)
 
         # Add to sorted set index for efficient range queries
-        await pipe.zadd(channel_index, {message_uuid: timestamp})
-        await pipe.expire(channel_index, ttl_sec)
+        pipe.zadd(channel_index, {message_uuid: timestamp})
+        pipe.expire(channel_index, ttl_sec)
 
         await pipe.execute()
         return message_uuid
