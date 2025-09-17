@@ -97,7 +97,7 @@ class AuditSink:
         try:
             kwargs = {'start': start, 'end': end}
             if count:
-                kwargs['count'] = count
+                kwargs['count'] = str(count)
             
             records = self.redis_adapter.client.xrange(self.stream_name, **kwargs)
             

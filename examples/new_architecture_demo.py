@@ -248,12 +248,14 @@ def configuration_examples():
     # File configuration
     file_config = create_file_config()
     print(f"File config: {file_config.storage.type.value}")
-    print(f"Storage path: {file_config.storage.config.path}")
+    if hasattr(file_config.storage.config, 'path'):
+        print(f"Storage path: {file_config.storage.config.path}")
     
     # SQLite configuration
     sqlite_config = create_sqlite_config()
     print(f"SQLite config: {sqlite_config.storage.type.value}")
-    print(f"Database path: {sqlite_config.storage.config.path}")
+    if hasattr(sqlite_config.storage.config, 'path'):
+        print(f"Database path: {sqlite_config.storage.config.path}")
 
 
 async def main():

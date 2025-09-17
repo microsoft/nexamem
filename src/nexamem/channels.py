@@ -247,6 +247,8 @@ class ChannelManager:
                 channels_data = validated_data['channels']
             else:
                 # Fallback to basic loading (backward compatibility)
+                if yaml is None:
+                    raise ImportError("PyYAML is required for YAML channel configuration")
                 with open(yaml_path, encoding='utf-8') as f:
                     data = yaml.safe_load(f)
 
