@@ -21,7 +21,7 @@ try:
         SearchFieldDataType,
         SearchIndex,
         SimpleField,
-        VectorSearch,SS
+        VectorSearch,
         VectorSearchAlgorithmKind,
         VectorSearchProfile,
     )
