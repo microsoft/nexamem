@@ -2,13 +2,13 @@
 
 ## Python Support
 
-The stabilization branch requires Python **3.11+**. CI targets CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows; remote matrix verification is still pending. Python 3.8, 3.9, and 3.10 are no longer supported by this checkout. Newer Python versions are not yet certified by the CI matrix.
+The release candidate requires Python **3.11+**. The stabilization baseline passed CI on CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows; candidate changes must pass the matrix again. Python 3.8, 3.9, and 3.10 are no longer supported by this checkout. Newer Python versions are not yet certified by the CI matrix.
 
 Published packages predate this stabilization work. Installing from PyPI does not install the unreleased features described here; see [release status](PROJECT_STATUS.md) for the current package version and publication gates.
 
 ## Set Up With pip
 
-The quick starts and new features in this documentation require the unreleased source checkout. If you have not already cloned or downloaded it:
+The quick starts and new features in this documentation require the release-candidate source checkout. If you have not already cloned or downloaded it:
 
 ```shell
 git clone https://github.com/microsoft/nexamem.git

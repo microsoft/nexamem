@@ -1,6 +1,6 @@
 # Framework Integrations
 
-These integrations target the [unreleased 1.0 checkout](PROJECT_STATUS.md), not the currently published package. Install from the repository root with pip. The base package does not import framework SDKs; direct adapter imports require the matching extra.
+These integrations target the [1.0 release candidate](PROJECT_STATUS.md), not the current stable PyPI package. Install from the repository root with pip. The base package does not import framework SDKs; direct adapter imports require the matching extra.
 
 | Extra | Contract | Validated SDK |
 | --- | --- | --- |

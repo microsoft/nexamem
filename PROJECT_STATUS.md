@@ -1,8 +1,8 @@
 # Release Status
 
-## 1.0.0 Stabilization: Unreleased
+## 1.0.0rc1: Release Candidate
 
-The target is a stability release with approved authentication, lifecycle, retention, and optional integration improvements. Package and module versions remain `0.4.2` until the release gates pass. Existing PyPI/TestPyPI versions are immutable: locally rebuilt `0.4.2` artifacts must not be uploaded as new content.
+The target is a 1.0.0 stability release with approved authentication, lifecycle, retention, and optional integration improvements. Package and module versions are `1.0.0rc1`; stable 1.0.0 is not released. The TestPyPI candidate path is approved, not a production release tag or PyPI upload. Existing PyPI/TestPyPI versions are immutable: changed content requires a new version.
 
 | Area | State |
 | --- | --- |
@@ -17,8 +17,12 @@ The target is a stability release with approved authentication, lifecycle, reten
 | Async/lifecycle | Thread-backed local data I/O, cancellation serialization, facade context managers and borrowed-storage semantics |
 | Retention | Logical per-record expiry and explicit purge; not audit/backup erasure or background physical deletion |
 | Integrations | LangChain, AutoGen, Semantic Kernel, Agent Framework; Foundry hosting documentation, not a fifth adapter |
-| Cross-platform certification | Pending successful GitHub Actions matrix; local Windows checks are not equivalent |
-| Publication | Not performed; no release tag or production upload authorized |
+| Cross-platform verification | Stabilization baseline passed all 17 CI jobs; rerun the matrix for candidate changes |
+| Publication | TestPyPI candidate publication/verification is a separate gate; no production upload authorized |
+
+## Remote Baseline Verification
+
+Commit `79f0d66` passed [CI run 40905994705](https://github.com/microsoft/nexamem/actions/runs/40905994705) and [CodeQL run 40905993954](https://github.com/microsoft/nexamem/actions/runs/40905993954). All nine Python 3.11/3.12/3.13 test jobs across Linux, macOS, and Windows, quality checks, package build, and six clean distribution-install jobs succeeded. This verifies that baseline, not a subsequently changed candidate or live Azure deployment.
 
 ## Local Verification
 
@@ -26,14 +30,14 @@ The target is a stability release with approved authentication, lifecycle, reten
 - Strict mypy passes across 33 source modules on both runtimes. Ruff lint and formatting checks pass; both development environments pass `pip check`.
 - Eight local README, SQLite persistence, and framework examples execute successfully on both Python 3.11 and 3.13. A fresh Python 3.11 source install passes `pip check` and all four base examples without framework extras. Local documentation links and example syntax are checked separately from live-service behavior.
 - Validation-only wheel and sdist in `dist-release/frameworks/` pass strict Twine checks and independent clean base installations on Python 3.11 and 3.13. Smoke tests cover local CRUD, logical expiry, context managers, legacy APIs, and shipped adapter modules without installing framework extras.
-- The Windows/Python 3.13 development lock was regenerated with pip-tools. No commit, release tag, version bump, or upload was performed.
+- The Windows/Python 3.13 development lock was regenerated with pip-tools. Candidate metadata is now `1.0.0rc1`; prior local artifacts remain validation-only and must not be uploaded under a reused version.
 
 ## Remaining Gates
 
-- Run the complete supported Python/OS CI matrix after review.
+- Run the complete supported Python/OS CI matrix on the release-candidate commit; baseline verification is complete.
 - Recheck offline unit line coverage, lint, formatting, dependency consistency, and clean installed artifacts on the final candidate.
 - Validate live Azure/Foundry networking, data-plane permissions, token refresh/reconnect/failover, and intended Managed Redis endpoint policy before production use.
-- Choose a unique candidate version, update both version locations, review migration notes, and authorize TestPyPI verification.
+- Publish the approved unique candidate to TestPyPI, then verify the uploaded distributions in clean environments. Registry trusted-publisher configuration must match the workflow and environment.
 - Approve a final stable version/tag and protected production environment before publication.
 
 Passing local tests does not establish live Azure compatibility, regulatory compliance, automatic encryption, quota/PII enforcement, or physical-erasure guarantees. The documentation records those limitations rather than promising them.

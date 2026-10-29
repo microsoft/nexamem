@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "0.4.2"
+version = "1.0.0rc1"
 description = "Azure-focused conversational memory storage with sync/async APIs, local backends, and optional OpenTelemetry."
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }

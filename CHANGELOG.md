@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.0.0 - Unreleased
+## 1.0.0rc1 - Release Candidate
 
-Stability work in progress. This is not a published release; package metadata remains `0.4.2` pending completion of release gates.
+Candidate for the planned 1.0.0 stability release. Package and module versions are `1.0.0rc1`; this is not a stable release. TestPyPI publication and verification are tracked separately in [release status](PROJECT_STATUS.md).
 
 ### Added
 
@@ -40,4 +40,4 @@ Stability work in progress. This is not a published release; package metadata re
 - Legacy API exports remain available. No automatic file-key or channel-scope migration is provided; see [migration notes](LEGACY_API.md).
 - Encryption, quota/PII enforcement, immutable audit retention, physical-erasure deadlines, and live Azure certification are not supplied. Logical expiry is facade-level and does not change legacy/raw-storage guarantees. See [architecture](NEW_ARCHITECTURE.md).
 - Redis uses a standalone/proxy client, not OSS-cluster routing. LangChain support targets the deprecated 1.x history interface, not LangGraph. Adapter ordering is single-writer, not distributed transactional persistence.
-- Full CI-matrix verification remains a release gate. Local strict mypy passes across the package. See [status](PROJECT_STATUS.md).
+- The stabilization baseline passed the full supported Python/OS CI matrix, quality gates, clean distribution checks, and CodeQL. Candidate commits must pass again. See [status](PROJECT_STATUS.md).
