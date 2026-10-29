@@ -13,7 +13,7 @@ flowchart LR
     Container --> Memory[Memory]
     Container --> File[JSON files]
     Container --> SQLite[SQLite]
-    Container --> Redis[Azure Cache for Redis]
+    Container --> Redis[Azure Redis / Azure Managed Redis]
 ```
 
 ## Compatibility Channels

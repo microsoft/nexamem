@@ -24,7 +24,7 @@ The target is a stability release with approved authentication, lifecycle, reten
 
 - Windows/Python 3.11.12 and 3.13.15: 203 offline tests pass on each runtime, with 92.61% whole-package line coverage (3290 statements), including legacy modules and all four adapters.
 - Strict mypy passes across 33 source modules on both runtimes. Ruff lint and formatting checks pass; both development environments pass `pip check`.
-- Seven local README/framework examples execute successfully; local file links in the ten refreshed documentation files resolve.
+- Eight local README, SQLite persistence, and framework examples execute successfully on both Python 3.11 and 3.13. A fresh Python 3.11 source install passes `pip check` and all four base examples without framework extras. Local documentation links and example syntax are checked separately from live-service behavior.
 - Validation-only wheel and sdist in `dist-release/frameworks/` pass strict Twine checks and independent clean base installations on Python 3.11 and 3.13. Smoke tests cover local CRUD, logical expiry, context managers, legacy APIs, and shipped adapter modules without installing framework extras.
 - The Windows/Python 3.13 development lock was regenerated with pip-tools. No commit, release tag, version bump, or upload was performed.
 

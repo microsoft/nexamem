@@ -8,9 +8,17 @@ Published packages predate this stabilization work. Installing from PyPI does no
 
 ## Set Up With pip
 
+The quick starts and new features in this documentation require the unreleased source checkout. If you have not already cloned or downloaded it:
+
+```shell
+git clone https://github.com/microsoft/nexamem.git
+cd nexamem
+```
+
 Create an isolated environment using your selected supported interpreter:
 
 ```shell
+python --version
 python -m venv .venv
 ```
 
@@ -26,18 +34,15 @@ Linux/macOS:
 source .venv/bin/activate
 ```
 
-For a published release:
+From the repository root after activating the environment:
 
 ```shell
-python -m pip install nexamem
-```
-
-For this unreleased checkout, run from the repository root after activating the environment:
-
-```shell
+python -m pip install --upgrade pip
 python -m pip install -e .
 python -m pip check
 ```
+
+The pip upgrade uses your configured package index. If PowerShell blocks activation, use `.venv\Scripts\python.exe` instead of `python` in subsequent commands; activation is optional.
 
 For contributors who also need tests, lint, typing, and packaging tools:
 
@@ -47,6 +52,8 @@ python -m pip check
 ```
 
 Alternatively, `python -m pip install -r requirements-test.txt` installs the same development extra. `requirements.txt` installs the local project. No uv tooling is used.
+
+For the currently published release instead, use `python -m pip install nexamem` in an isolated environment and follow documentation matching that release. It does not include this checkout's unreleased features.
 
 ## Extras
 
@@ -72,6 +79,24 @@ For optional observability in this checkout, install `python -m pip install -e "
 Run the [sync or async quick start](README.md#quick-start) after installation. Both use process-local memory, so they require no Azure account or environment variables. Successful assertions produce no output. Use `StorageConfig.file("./memory-data")` or `StorageConfig.sqlite("./memory.db")` for persistence between processes; relative paths are resolved from the application's working directory. File/SQLite async data operations run in worker threads; construction is still synchronous. See [framework examples](INTEGRATIONS.md) for optional integrations.
 
 In a notebook with an event loop already running, define `main()` from the async example and call `await main()` instead of `asyncio.run(main())`.
+
+To verify local persistence across facade lifetimes, run this example from a writable directory. It creates `nexamem-demo.db`; the stored note is deleted at the end, but the database file remains:
+
+```python
+from nexamem import AIMemory, AIMemoryConfig, StorageConfig
+
+config = AIMemoryConfig(
+	default_scope="local-demo", storage=StorageConfig.sqlite("./nexamem-demo.db")
+)
+with AIMemory(config) as memory:
+	memory_id = memory.store("Persist this note.")
+
+with AIMemory(config) as memory:
+	record = memory.retrieve(memory_id)
+	assert record is not None
+	assert record["content"] == "Persist this note."
+	assert memory.delete(memory_id)
+```
 
 ## Azure Cache for Redis
 

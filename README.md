@@ -7,9 +7,9 @@
 [![Azure Managed Redis compatible](https://img.shields.io/badge/Azure_Managed_Redis-compatible-0078D4)](INSTALLATION.md#azure-cache-for-redis)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-NexaMem is an Azure-focused Python storage library for chatbot history and application-managed AI memory. Keep messages, conversation summaries, user preferences, and workflow notes as text records with metadata, then retrieve, search, and delete them through a consistent API.
+NexaMem helps Python chatbots and AI agents remember across conversations without requiring you to build a custom persistence layer. Store conversation history, preferences, summaries, and task notes through one API, with explicit retention and control over what your application remembers.
 
-The shared-service implementation supports Azure Redis endpoints, including Azure Managed Redis, with renewable Entra ID credentials or Key Vault-backed access keys. Start with in-memory storage for experiments or JSON files and SQLite for local persistence without an Azure account. Change the storage configuration without rewriting calls to the memory API.
+Start locally with in-memory storage, JSON files, or SQLite, then move to Azure Redis, including Azure Managed Redis, without rewriting your memory API calls. Optional integrations connect that persistence to LangChain, AutoGen, Semantic Kernel, and Microsoft Agent Framework. Renewable Entra ID authentication and optional OpenTelemetry instrumentation reduce the identity and observability plumbing your application needs to maintain.
 
 ## Why NexaMem?
 
@@ -34,15 +34,14 @@ Your application decides what to remember and what to include in a model's conte
 
 This checkout requires Python 3.11 or newer. CI targets Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. Published older versions may have different requirements.
 
-```shell
-python -m pip install nexamem
-```
-
-Published packages do not contain this checkout's unreleased fixes. For the stabilization code, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
+The examples below target this unreleased checkout, not the current PyPI package. Clone or download this repository, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
 
 ```shell
 python -m pip install -e .
+python -m pip check
 ```
+
+To install the currently published release instead, use `python -m pip install nexamem`. It does not include this checkout's unreleased features; use documentation matching that release.
 
 Contributors can install `python -m pip install -e ".[dev]"` instead to add test and development tools. No uv installation or commands are required. The local quick starts below need no Azure account, credentials, YAML configuration, or telemetry setup.
 
@@ -51,18 +50,18 @@ Contributors can install `python -m pip install -e ".[dev]"` instead to add test
 ```python
 from nexamem import AIMemory, AIMemoryConfig, StorageConfig
 
-memory = AIMemory(
+with AIMemory(
     AIMemoryConfig(default_scope="conversation-42", storage=StorageConfig.memory())
-)
-memory_id = memory.store("The customer prefers email.", metadata={"source": "chat"})
-record = memory.retrieve(memory_id)
-assert record is not None
-assert record["content"] == "The customer prefers email."
-assert memory.search("email") == [memory_id]
-assert memory.delete(memory_id)
+) as memory:
+    memory_id = memory.store("The customer prefers email.", metadata={"source": "chat"})
+    record = memory.retrieve(memory_id)
+    assert record is not None
+    assert record["content"] == "The customer prefers email."
+    assert memory.search("email") == [memory_id]
+    assert memory.delete(memory_id)
 ```
 
-Use `StorageConfig.file("./memory-data")` or `StorageConfig.sqlite("./memory.db")` for local persistence. Reads return a record containing `id`, `content`, `metadata`, `scope`, and timestamps, or `None` when absent.
+Successful assertions produce no output. In-memory records do not survive process exit. Use `StorageConfig.file("./memory-data")` or `StorageConfig.sqlite("./memory.db")` for local persistence. Reads return a record containing `id`, `content`, `metadata`, `scope`, and timestamps, or `None` when absent.
 
 ### Async
 
@@ -71,19 +70,21 @@ import asyncio
 from nexamem import AsyncAIMemory, AIMemoryConfig, StorageConfig
 
 async def main():
-    memory = AsyncAIMemory(
+    async with AsyncAIMemory(
         AIMemoryConfig(default_scope="conversation-42", storage=StorageConfig.memory())
-    )
-    memory_id = await memory.store("Remember this preference.")
-    record = await memory.retrieve(memory_id)
-    assert record is not None
-    assert record["content"] == "Remember this preference."
-    assert await memory.delete(memory_id)
+    ) as memory:
+        memory_id = await memory.store("Remember this preference.")
+        record = await memory.retrieve(memory_id)
+        assert record is not None
+        assert record["content"] == "Remember this preference."
+        assert await memory.delete(memory_id)
 
 asyncio.run(main())
 ```
 
 Use `with AIMemory(...)` or `async with AsyncAIMemory(...)` to release facade-owned resources. File and SQLite async data operations offload synchronous I/O to worker threads; constructors still initialize synchronously. Cancelling an operation waits for its worker before releasing the per-adapter lock and is not rollback. Storage supplied through a DI container remains caller-owned.
+
+In a notebook with an event loop already running, call `await main()` instead of `asyncio.run(main())`. See [local persistence verification](INSTALLATION.md#first-local-run) for a SQLite example that reopens stored data.
 
 ### Retention
 
