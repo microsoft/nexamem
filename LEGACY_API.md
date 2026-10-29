@@ -1,5 +1,13 @@
 # Legacy APIs and Migration
 
+## V1 Compatibility Policy
+
+NexaMem 1.x follows semantic versioning for its documented Python interfaces: the sync/async memory facades, configuration constructors, storage contracts, and optional integration classes. Patch releases correct defects; minor releases add backward-compatible functionality. Breaking documented interface changes and removal of retained legacy entry points require a future major release and migration notes. Bug fixes can correct behavior that contradicts documented guarantees; review each release's changelog before upgrading.
+
+The compatibility entry points listed below remain supported throughout 1.x. Any planned removal will be announced in the changelog and migration guide before a future major release; no removal is scheduled for 1.0. Private names, undocumented implementation details, and protected internals of third-party SDKs are not extension contracts. Framework compatibility is limited to the supported dependency ranges and contracts in the [integration guide](INTEGRATIONS.md), not arbitrary upstream versions.
+
+API compatibility does not promise automatic on-disk migration or stronger authorization, retention, concurrency, or encryption guarantees. The storage and channel migrations below still apply when moving from an older release to 1.0. Back up data and test the upgrade in a separate environment first.
+
 ## Retained APIs
 
 The top-level `AIMemory` and `AsyncAIMemory` names refer to the configuration-driven API. Existing Redis-oriented classes remain available as `LegacyAIMemory` and `LegacyAsyncAIMemory`, or from `nexamem.aimemory`. This stabilization does not remove them.
@@ -24,7 +32,7 @@ New-facade writes now apply channel TTL or a positive explicit override. Generic
 
 ## Python and Dependencies
 
-The next release requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting it. Legacy import names are retained; runtime-version support is not.
+NexaMem 1.0 requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting 1.0. Legacy import names are retained; support for those older runtimes is not. The verified candidate matrix covers Python 3.11, 3.12, and 3.13; final stable validation is tracked in [release status](PROJECT_STATUS.md).
 
 ## File Storage Migration
 

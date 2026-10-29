@@ -6,6 +6,8 @@
 
 The generic facade API is `store`, `retrieve`, `delete`, `list`, `search`, `purge_expired`, `get_audit_log`, `get_stats`, and `clear_scope`. Storage adapters expose `list_memories` internally. Async equivalents are awaitable. Content is text, metadata is a dictionary, and generic scopes are caller-supplied strings.
 
+The [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy) defines the supported interface and legacy deprecation commitments. It does not expand the storage, security, or retention guarantees described below.
+
 ```mermaid
 flowchart LR
     Config[AIMemoryConfig] --> Facade[AIMemory / AsyncAIMemory]

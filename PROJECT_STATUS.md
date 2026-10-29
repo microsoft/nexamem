@@ -1,8 +1,8 @@
 # Release Status
 
-## 1.0.0rc1: Release Candidate
+## 1.0.0: Prepared, Not Released
 
-The target is a 1.0.0 stability release with approved authentication, lifecycle, retention, and optional integration improvements. Package and module versions are `1.0.0rc1`; stable 1.0.0 is not released. The TestPyPI candidate path is approved, not a production release tag or PyPI upload. Existing PyPI/TestPyPI versions are immutable: changed content requires a new version.
+The proposed 1.0.0 stability release includes authentication, lifecycle, retention, and optional integration improvements. Package and module versions are now `1.0.0`, with the intended Production/Stable classifier, but stable 1.0.0 is not published. The preceding `1.0.0rc1` TestPyPI candidate is verified below. Stable preparation is approved, not a production release tag or PyPI upload. Existing PyPI/TestPyPI versions are immutable: changed content requires a new version.
 
 | Area | State |
 | --- | --- |
@@ -17,8 +17,10 @@ The target is a 1.0.0 stability release with approved authentication, lifecycle,
 | Async/lifecycle | Thread-backed local data I/O, cancellation serialization, facade context managers and borrowed-storage semantics |
 | Retention | Logical per-record expiry and explicit purge; not audit/backup erasure or background physical deletion |
 | Integrations | LangChain, AutoGen, Semantic Kernel, Agent Framework; Foundry hosting documentation, not a fifth adapter |
-| Cross-platform verification | Published candidate commit `442f201` passed all 17 reusable CI jobs across the supported matrix |
-| Publication | `1.0.0rc1` published to TestPyPI through OIDC and independently verified; no production upload authorized |
+| Cross-platform verification | Published candidate commit `442f201` passed all 17 reusable CI jobs; the proposed stable commit still needs remote validation |
+| Stable preparation | Proposed `1.0.0` metadata, documentation, offline quality checks, and clean local distributions verified; remote stable validation pending |
+| Publication | `1.0.0rc1` verified on TestPyPI; `1.0.0` not published and no production upload authorized |
+| PR enforcement | Maintainer will enable required PRs after v1 deployment; no repository settings changed during preparation |
 
 ## Remote Verification
 
@@ -39,15 +41,26 @@ Both downloaded TestPyPI archives passed strict Twine checks and independent cle
 - Strict mypy passes across 33 source modules on both runtimes. Ruff lint and formatting checks pass; both development environments pass `pip check`.
 - Eight local README, SQLite persistence, and framework examples execute successfully on both Python 3.11 and 3.13. A fresh Python 3.11 source install passes `pip check` and all four base examples without framework extras. Local documentation links and example syntax are checked separately from live-service behavior.
 - Validation-only wheel and sdist in `dist-release/frameworks/` pass strict Twine checks and independent clean base installations on Python 3.11 and 3.13. Smoke tests cover local CRUD, logical expiry, context managers, legacy APIs, and shipped adapter modules without installing framework extras.
-- The Windows/Python 3.13 development lock was regenerated with pip-tools. Candidate metadata is now `1.0.0rc1`; prior local artifacts remain validation-only and must not be uploaded under a reused version.
+- The Windows/Python 3.13 development lock was regenerated with pip-tools. Proposed stable metadata is now `1.0.0`; prior artifacts remain tied to their original versions and must not be replaced under a reused version.
+
+## Stable Preparation Verification
+
+The proposed stable version has not yet been committed, tagged, published, or run through remote CI. Local checks completed on 2026-10-29:
+
+- Both version declarations match `1.0.0`, packaging accepts it as stable, and the intended classifier is Production/Stable. The version was unused on production PyPI at the preparation check; no upload was attempted.
+- All 203 offline tests pass on Python 3.11.12 and 3.13.15 with 92.61% whole-package line coverage (3290 statements). Strict mypy passes across 33 modules on both runtimes; Ruff lint/format (51 files), both dependency checks, and editor diagnostics pass.
+- Local links and heading anchors resolve across 11 documents; all 14 Python examples parse. Nine offline README, SQLite, framework, and legacy examples run unchanged outside the checkout on each runtime, for 18 successful executions. Credentialed service/exporter examples were not executed.
+- Fresh `1.0.0` wheel and source archives in `dist-release/1.0.0-preparation/` pass strict Twine checks and four independent clean-install smoke tests (both archive formats on both runtimes). Dependencies came from the approved feed; isolated installed-package checks verify version metadata, local persistence, async operations, expiry, legacy APIs, and shipped adapter modules. These are local preparation artifacts, not production uploads.
+
+Successful local or candidate checks do not replace remote CI on the approved stable commit or verification of the archives ultimately uploaded by the production workflow.
 
 ## Remaining Gates
 
-- Review the published candidate and migration notes; candidate CI and installed-distribution verification are complete.
-- Recheck offline unit line coverage, lint, formatting, dependency consistency, the supported CI matrix, and clean installed artifacts after any code changes or the final stable version bump.
+- Review the published candidate, proposed stable changes, [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy), and migration notes; candidate CI and installed-distribution verification are complete.
+- Run the final stable commit through the supported remote CI matrix and clean installed-distribution checks. Local stable checks are complete; repeat affected checks after any further changes.
 - Validate live Azure/Foundry networking, data-plane permissions, token refresh/reconnect/failover, and intended Managed Redis endpoint policy before production use.
-- Confirm production PyPI trusted publishing and appropriate environment/review protections separately; successful TestPyPI OIDC publishing does not verify production settings.
-- Approve a final stable version/tag and protected production environment before publication.
+- Confirm production PyPI trusted publishing and appropriate environment access/tag permissions separately; successful TestPyPI OIDC publishing does not verify production settings. Required PR enforcement is intentionally deferred until after v1 deployment.
+- Explicitly approve the final stable commit/tag and production upload, then verify the uploaded archives and installed package before marking 1.0.0 released.
 
 Passing local tests does not establish live Azure compatibility, regulatory compliance, automatic encryption, quota/PII enforcement, or physical-erasure guarantees. The documentation records those limitations rather than promising them.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
-version = "1.0.0rc1"
+version = "1.0.0"
 description = "Azure-focused conversational memory storage with sync/async APIs, local backends, and optional OpenTelemetry."
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }
@@ -38,7 +38,7 @@ keywords = [
     "pii", "content-processing", "enterprise", "async", "channels"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
     "Topic :: Software Development :: Libraries :: Python Modules",

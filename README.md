@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/microsoft/nexamem/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/nexamem/actions/workflows/ci.yml)
 [![PyPI release](https://img.shields.io/pypi/v/nexamem)](https://pypi.org/project/nexamem/)
-[![Release candidate: 1.0.0rc1](https://img.shields.io/badge/release_candidate-1.0.0rc1-yellow)](PROJECT_STATUS.md)
+[![1.0.0 prepared: not released](https://img.shields.io/badge/1.0.0-prepared_not_released-yellow)](PROJECT_STATUS.md)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Azure Managed Redis compatible](https://img.shields.io/badge/Azure_Managed_Redis-compatible-0078D4)](INSTALLATION.md#azure-cache-for-redis)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -28,20 +28,20 @@ Start locally with in-memory storage, JSON files, or SQLite, then move to Azure 
 Your application decides what to remember and what to include in a model's context. NexaMem supplies storage and text-based search, not automatic memory extraction, embeddings, or semantic retrieval.
 
 > [!IMPORTANT]
-> This checkout contains `1.0.0rc1`, a release candidate for the planned 1.0.0 stability release, not a stable release. TestPyPI publication and installed-candidate verification are separate release gates. See [release status](PROJECT_STATUS.md) and [candidate changes](CHANGELOG.md).
+> This checkout prepares `1.0.0`; it is not yet published to PyPI. The preceding `1.0.0rc1` candidate was published to TestPyPI and verified independently. Use the source setup below until stable publication is confirmed. See [release status](PROJECT_STATUS.md), [changes](CHANGELOG.md), and the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
 
 ## Install
 
 This checkout requires Python 3.11 or newer. CI targets Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. Published older versions may have different requirements.
 
-The examples below target this release-candidate checkout, not the current stable PyPI package. Clone or download this repository, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
+The examples below target the proposed 1.0 release in this checkout, not an older PyPI package. Clone or download this repository, select the reviewed release-preparation commit, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
 
 ```shell
 python -m pip install -e .
 python -m pip check
 ```
 
-To install the currently published release instead, use `python -m pip install nexamem`. It does not include this checkout's unreleased features; use documentation matching that release.
+To install the currently published release instead, use `python -m pip install nexamem` and documentation matching its installed version. After `1.0.0` is published and verified, install that release with `python -m pip install "nexamem==1.0.0"`; that command is not available before publication. Review [migration notes](LEGACY_API.md) before upgrading an existing store.
 
 Contributors can install `python -m pip install -e ".[dev]"` instead to add test and development tools. No uv installation or commands are required. The local quick starts below need no Azure account, credentials, YAML configuration, or telemetry setup.
 
@@ -117,7 +117,7 @@ Redis, redis-entraid, fakeredis, PyYAML, and Azure identity/Key Vault clients re
 [![Semantic Kernel 1.x](https://img.shields.io/badge/Semantic_Kernel-1.x-512BD4)](INTEGRATIONS.md#semantic-kernel)
 [![Microsoft Agent Framework 1.22](https://img.shields.io/badge/Microsoft_Agent_Framework-1.22-0078D4)](INTEGRATIONS.md#microsoft-agent-framework)
 
-Optional integrations in the 1.0 release candidate; these badges indicate adapter compatibility, not framework endorsement or availability in the current stable PyPI package.
+Optional integrations prepared for 1.0; these badges indicate adapter compatibility, not framework endorsement or availability in an older PyPI package. Supported SDK ranges and tested versions are recorded in the integration guide.
 
 Install only the framework extra you use, for example `python -m pip install -e ".[agent-framework]"`. Framework packages are not imported by the base package. The integrations provide LangChain typed chat history, AutoGen text memory, Semantic Kernel `ChatHistory` snapshot persistence, and an Agent Framework `HistoryProvider`.
 
@@ -127,7 +127,7 @@ See [integration examples and compatibility limits](INTEGRATIONS.md), including 
 
 Observability is optional. The `telemetry` extra installs the OpenTelemetry API; your application supplies its SDK, providers, sampling, exporters, and shutdown/flush lifecycle. Without the API, operations run normally. With the API but no configured providers, telemetry is a no-op. NexaMem never configures global providers or starts an exporter itself.
 
-For generic OpenTelemetry support in this release-candidate checkout:
+For generic OpenTelemetry support in this source checkout:
 
 ```shell
 python -m pip install -e ".[telemetry]"

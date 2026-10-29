@@ -1,8 +1,18 @@
 # Changelog
 
+## 1.0.0 - Unreleased
+
+Stable release preparation, not a production publication. Package and module metadata are `1.0.0`; the intended classifier is Production/Stable. The feature and repair inventory is recorded under the verified `1.0.0rc1` candidate below. The final stable commit and distributions must be validated independently; see [release status](PROJECT_STATUS.md).
+
+### Release Preparation
+
+- Define the documented v1 public-interface compatibility policy and retain legacy compatibility entry points throughout 1.x, with removals reserved for a future major release.
+- Clarify source installation before publication, version-pinned stable installation after publication, persisted-data migration, and framework compatibility limits.
+- Document the single-maintainer release process and the decision to enable required pull requests after v1 deployment, without changing repository protections.
+
 ## 1.0.0rc1 - Release Candidate
 
-Candidate for the planned 1.0.0 stability release. Package and module versions are `1.0.0rc1`; this is not a stable release. TestPyPI publication and verification are tracked separately in [release status](PROJECT_STATUS.md).
+Published to TestPyPI on 2026-10-29 and independently verified; not a production PyPI release. Its package and module versions are `1.0.0rc1`. The proposed stable version is tracked separately in [release status](PROJECT_STATUS.md).
 
 ### Added
 
@@ -40,4 +50,4 @@ Candidate for the planned 1.0.0 stability release. Package and module versions a
 - Legacy API exports remain available. No automatic file-key or channel-scope migration is provided; see [migration notes](LEGACY_API.md).
 - Encryption, quota/PII enforcement, immutable audit retention, physical-erasure deadlines, and live Azure certification are not supplied. Logical expiry is facade-level and does not change legacy/raw-storage guarantees. See [architecture](NEW_ARCHITECTURE.md).
 - Redis uses a standalone/proxy client, not OSS-cluster routing. LangChain support targets the deprecated 1.x history interface, not LangGraph. Adapter ordering is single-writer, not distributed transactional persistence.
-- The stabilization baseline passed the full supported Python/OS CI matrix, quality gates, clean distribution checks, and CodeQL. Candidate commits must pass again. See [status](PROJECT_STATUS.md).
+- The stabilization baseline passed CodeQL, and the published candidate passed the full supported Python/OS CI matrix, quality gates, and clean distribution checks. See [status](PROJECT_STATUS.md).

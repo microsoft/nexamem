@@ -2,18 +2,20 @@
 
 ## Python Support
 
-The release candidate requires Python **3.11+**. The stabilization baseline passed CI on CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows; candidate changes must pass the matrix again. Python 3.8, 3.9, and 3.10 are no longer supported by this checkout. Newer Python versions are not yet certified by the CI matrix.
+NexaMem 1.0 requires Python **3.11+**. The verified `1.0.0rc1` candidate passed CI on CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows; the final stable commit must pass the matrix again. Python 3.8, 3.9, and 3.10 are no longer supported by this checkout. Newer Python versions are not yet certified by the CI matrix.
 
-Published packages predate this stabilization work. Installing from PyPI does not install the unreleased features described here; see [release status](PROJECT_STATUS.md) for the current package version and publication gates.
+This checkout prepares `1.0.0`, which is not yet published to PyPI. The `1.0.0rc1` TestPyPI release is already verified; it is not a production PyPI release. See [release status](PROJECT_STATUS.md) for publication evidence and remaining gates. Until stable publication is confirmed, use the source setup below rather than assuming an unpinned PyPI install contains 1.0 features.
 
 ## Set Up With pip
 
-The quick starts and new features in this documentation require the release-candidate source checkout. If you have not already cloned or downloaded it:
+For the proposed 1.0 release, install from the reviewed source checkout. If you have not already cloned or downloaded the repository:
 
 ```shell
 git clone https://github.com/microsoft/nexamem.git
 cd nexamem
 ```
+
+Select the reviewed release-preparation branch or commit before installing; the default branch may not yet contain that version. Do not select the stable `v1.0.0` tag until it exists and its publication is verified.
 
 Create an isolated environment using your selected supported interpreter:
 
@@ -53,7 +55,16 @@ python -m pip check
 
 Alternatively, `python -m pip install -r requirements-test.txt` installs the same development extra. `requirements.txt` installs the local project. No uv tooling is used.
 
-For the currently published release instead, use `python -m pip install nexamem` in an isolated environment and follow documentation matching that release. It does not include this checkout's unreleased features.
+For the currently published release instead, use `python -m pip install nexamem` in an isolated environment and follow documentation matching the installed version.
+
+After production publication and verification, the stable installation commands will be:
+
+```shell
+python -m pip install "nexamem==1.0.0"
+python -m pip check
+```
+
+Do not run the version-pinned command before publication. For a published framework integration, use the matching extra, for example `python -m pip install "nexamem[agent-framework]==1.0.0"`. Source installations continue to use `-e ".[agent-framework]"`. Review [migration and compatibility](LEGACY_API.md) before upgrading persisted data.
 
 ## Extras
 

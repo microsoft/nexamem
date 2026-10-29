@@ -1,6 +1,6 @@
 # Framework Integrations
 
-These integrations target the [1.0 release candidate](PROJECT_STATUS.md), not the current stable PyPI package. Install from the repository root with pip. The base package does not import framework SDKs; direct adapter imports require the matching extra.
+These integrations target the [proposed 1.0 release](PROJECT_STATUS.md), not an older PyPI package. Until stable publication is verified, install from the reviewed source checkout with pip. After publication, version-pinned extras such as `nexamem[langchain]==1.0.0` select the stable package. The base package does not import framework SDKs; direct adapter imports require the matching extra. See the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
 
 | Extra | Contract | Validated SDK |
 | --- | --- | --- |
