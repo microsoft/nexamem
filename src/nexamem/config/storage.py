@@ -68,13 +68,29 @@ class AzureRedisConfig(BaseModel):
     @classmethod
     def validate_azure_hostname(cls, v: str) -> str:
         """Validate that hostname is an Azure Redis hostname."""
-        if not v.endswith(".redis.cache.windows.net"):
-            raise ValueError("Azure Redis hostname must end with .redis.cache.windows.net")
+        if not v.endswith((".redis.cache.windows.net", ".redis.azure.net")) or any(
+            separator in v for separator in ("/", ":", " ")
+        ):
+            raise ValueError("Expected an Azure Cache for Redis or Azure Managed Redis hostname")
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def managed_redis_defaults(cls, data: Any) -> Any:
+        """Select the Managed Redis TLS port unless explicitly configured."""
+        if isinstance(data, dict) and "port" not in data:
+            hostname = data.get("hostname", "")
+            if isinstance(hostname, str) and hostname.endswith(".redis.azure.net"):
+                return {**data, "port": 10000}
+        return data
 
     @model_validator(mode="after")
     def validate_auth_config(self) -> "AzureRedisConfig":
         """Validate that required auth fields are provided."""
+        if not self.ssl:
+            raise ValueError("TLS is required for Azure Redis")
+        if self.hostname.endswith(".redis.azure.net") and self.db != 0:
+            raise ValueError("Azure Managed Redis supports database 0 only")
         if self.auth_method == AzureAuthMethod.ACCESS_KEY and not self.access_key:
             raise ValueError("access_key required when using access_key auth")
         elif self.auth_method == AzureAuthMethod.ENTRA_ID and not self.use_entra_id:
@@ -93,7 +109,12 @@ class AzureRedisConfig(BaseModel):
             raise ValueError("AZURE_REDIS_HOSTNAME environment variable required")
 
         # Determine auth method from available env vars
-        if os.getenv("AZURE_REDIS_ACCESS_KEY"):
+        explicit_method = os.getenv("AZURE_REDIS_AUTH_METHOD")
+        if explicit_method:
+            auth_method = AzureAuthMethod(explicit_method)
+            access_key = os.getenv("AZURE_REDIS_ACCESS_KEY")
+            use_entra_id = auth_method == AzureAuthMethod.ENTRA_ID
+        elif os.getenv("AZURE_REDIS_ACCESS_KEY"):
             auth_method = AzureAuthMethod.ACCESS_KEY
             access_key = os.getenv("AZURE_REDIS_ACCESS_KEY")
             use_entra_id = False
@@ -110,10 +131,14 @@ class AzureRedisConfig(BaseModel):
 
         return cls(
             hostname=hostname,
-            port=int(os.getenv("AZURE_REDIS_PORT", "6380")),
+            port=int(
+                os.getenv("AZURE_REDIS_PORT")
+                or ("10000" if hostname.endswith(".redis.azure.net") else "6380")
+            ),
             auth_method=auth_method,
             access_key=access_key,
             use_entra_id=use_entra_id,
+            username=os.getenv("AZURE_REDIS_USERNAME"),
             client_id=os.getenv("AZURE_CLIENT_ID"),
             client_secret=os.getenv("AZURE_CLIENT_SECRET"),
             tenant_id=os.getenv("AZURE_TENANT_ID"),

@@ -8,11 +8,17 @@ Stability work in progress. This is not a published release; package metadata re
 
 - Optional `telemetry` and `appinsights` extras for OpenTelemetry operation spans, counters, and duration histograms on the public sync/async memory facade. Providers and exporters remain application-owned; memory contents and identifiers are not emitted.
 - Azure Monitor/Application Insights setup guidance with managed identity and explicit Azure-focused positioning.
+- Passwordless Redis authentication through redis-entraid streaming credentials, token-derived usernames, renewal callbacks, and owned-resource cleanup. Accept Azure Managed Redis hostnames with TLS port 10000 and database 0 constraints; retain Azure Cache for Redis defaults.
+- Portable logical expiry via `default_ttl_sec`, per-write `ttl_sec`, channel TTL, and `purge_expired`, with reserved persisted expiry metadata and live-record filtering across all backends.
+- Sync/async context managers and caller-owned DI storage semantics. File/SQLite async data I/O runs in worker threads and remains serialized through repeated cancellation.
+- Optional LangChain typed history, AutoGen text/Markdown memory, Semantic Kernel typed history snapshots, and Microsoft Agent Framework `HistoryProvider` integrations, with real-interface offline tests.
+- Framework setup examples and Microsoft Foundry hosting guidance; no separate Foundry adapter or replacement of service-managed state.
 
 ### Changed
 
 - Raise the minimum Python version to 3.11; target CI on 3.11, 3.12, and 3.13.
 - Upgrade maintained dependency ranges and use pip, venv, pip-tools, setuptools, build, and Twine without requiring uv.
+- Allow Pydantic from 2.13.5 for compatibility with Semantic Kernel's current below-2.14 constraint; keep framework SDKs optional outside the development extra.
 - Consolidate CI and require offline unit line coverage of at least 90%, including legacy modules, plus blocking lint, format, typing, and installed-distribution checks.
 - Build one wheel and sdist per CI run; separate manual candidate publishing from exact stable-tag production publishing. TestPyPI retries skip existing files; production errors remain blocking.
 
@@ -32,5 +38,6 @@ Stability work in progress. This is not a published release; package metadata re
 ### Compatibility and Limitations
 
 - Legacy API exports remain available. No automatic file-key or channel-scope migration is provided; see [migration notes](LEGACY_API.md).
-- Encryption, policy enforcement, immutable audit retention, token renewal, and live Azure certification are not supplied by these fixes. See [architecture](NEW_ARCHITECTURE.md).
+- Encryption, quota/PII enforcement, immutable audit retention, physical-erasure deadlines, and live Azure certification are not supplied. Logical expiry is facade-level and does not change legacy/raw-storage guarantees. See [architecture](NEW_ARCHITECTURE.md).
+- Redis uses a standalone/proxy client, not OSS-cluster routing. LangChain support targets the deprecated 1.x history interface, not LangGraph. Adapter ordering is single-writer, not distributed transactional persistence.
 - Full CI-matrix verification remains a release gate. Local strict mypy passes across the package. See [status](PROJECT_STATUS.md).

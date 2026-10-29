@@ -1,5 +1,9 @@
 """Redis storage unit tests using fakeredis and mocked identity services."""
 
+import asyncio
+import base64
+import json
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -13,6 +17,7 @@ from nexamem.storage.azure_redis import (
     AzureRedisConnectionError,
     AzureRedisStorage,
 )
+from nexamem.storage.entra import RedisEntraCredentials
 
 
 def test_explicit_redis_auth_configuration() -> None:
@@ -24,6 +29,20 @@ def test_explicit_redis_auth_configuration() -> None:
     assert config.access_key == "unit-test-only"
 
 
+@pytest.mark.parametrize(
+    "hostname,port",
+    [
+        ("unit.redis.cache.windows.net", 6380),
+        ("unit.eastus.redis.azure.net", 10000),
+    ],
+)
+def test_azure_endpoint_defaults(hostname, port):
+    assert AzureRedisConfig(hostname=hostname, access_key="test").port == port
+    assert AzureRedisConfig(hostname=hostname, access_key="test", port=12345).port == 12345
+    with pytest.raises(ValueError, match="TLS"):
+        AzureRedisConfig(hostname=hostname, access_key="test", ssl=False)
+
+
 def test_redis_connect_verifies_tls() -> None:
     config = AzureRedisConfig(hostname="unit.redis.cache.windows.net", access_key="unit-test-only")
     client = fakeredis.FakeRedis(decode_responses=True)
@@ -32,6 +51,111 @@ def test_redis_connect_verifies_tls() -> None:
         storage.connect()
         assert factory.call_args.kwargs.get("ssl_cert_reqs", "required") == "required"
     client.close()
+
+
+async def test_entra_streaming_connection_ownership() -> None:
+    config = AzureRedisConfig(
+        hostname="unit.eastus.redis.azure.net",
+        auth_method="entra_id",
+        use_entra_id=True,
+        client_id="managed-identity-client-id",
+    )
+    for asynchronous in (False, True):
+        module = "redis_async" if asynchronous else "redis"
+        client = Mock(ping=AsyncMock() if asynchronous else Mock(), aclose=AsyncMock())
+        credentials = Mock()
+        with (
+            patch(f"nexamem.storage.azure_redis.{module}.Redis", return_value=client) as factory,
+            patch("nexamem.storage.azure_redis.RedisEntraCredentials", return_value=credentials),
+        ):
+            if asynchronous:
+                storage = AsyncAzureRedisStorage(config)
+                await asyncio.gather(storage.connect(), storage.connect())
+                await storage.close()
+                await storage.close()
+            else:
+                storage = AzureRedisStorage(config)
+                storage.connect()
+                storage.connect()
+                storage.close()
+                storage.close()
+            factory.assert_called_once()
+            assert factory.call_args.kwargs["credential_provider"] is credentials
+            assert "password" not in factory.call_args.kwargs
+            assert "username" not in factory.call_args.kwargs
+            credentials.close.assert_called_once()
+            assert storage._connection is None
+
+
+def test_entra_object_id_renewal_and_cleanup() -> None:
+    def token(value):
+        payload = {
+            "oid": "object-id",
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+            "version": value,
+        }
+        encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        return f"eyJhbGciOiJIUzI1NiJ9.{encoded}.c2ln"
+
+    credential = Mock(
+        get_token=Mock(
+            side_effect=[
+                SimpleNamespace(token=token(1)),
+                SimpleNamespace(token=token(2)),
+                SimpleNamespace(token=token(3)),
+                SimpleNamespace(token=token(4)),
+            ]
+        )
+    )
+    config = AzureRedisConfig(
+        hostname="unit.redis.cache.windows.net", auth_method="entra_id", use_entra_id=True
+    )
+    with patch("nexamem.storage.entra.DefaultAzureCredential", return_value=credential):
+        provider = RedisEntraCredentials(config)
+        first = provider._token_mgr.acquire_token().get_token()
+        second = provider._token_mgr.acquire_token(True).get_token()
+        assert first.try_get("oid") == "object-id"
+        assert first.get_value() != second.get_value()
+        callback = Mock()
+        provider.on_next(callback)
+        provider._listener.on_next(second)
+        callback.assert_called_once_with(second)
+        assert provider.get_credentials()[0] == "object-id"
+        thread = provider._token_mgr._thread
+        assert thread is not None and thread.is_alive()
+        provider.close()
+        assert not thread.is_alive()
+        assert provider._token_mgr._owned_loop.is_closed()
+        credential.close.assert_called_once()
+        assert provider._token_mgr._closed
+
+
+async def test_connection_failure_cleanup_and_retry() -> None:
+    config = AzureRedisConfig(
+        hostname="unit.redis.cache.windows.net", access_key="test", username="user"
+    )
+    client = Mock(ping=Mock(side_effect=[RuntimeError("secret-must-not-leak"), True]))
+    with patch("nexamem.storage.azure_redis.redis.Redis", return_value=client) as factory:
+        storage = AzureRedisStorage(config)
+        with pytest.raises(AzureRedisConnectionError) as error:
+            storage.connect()
+        assert "secret-must-not-leak" not in str(error.value)
+        assert storage._connection is None
+        client.close.assert_called_once()
+        storage.connect()
+        assert factory.call_args.kwargs["username"] == "user"
+        storage.close()
+
+    client = Mock(ping=AsyncMock(side_effect=[RuntimeError("failed"), True]), aclose=AsyncMock())
+    with patch("nexamem.storage.azure_redis.redis_async.Redis", return_value=client):
+        storage = AsyncAzureRedisStorage(config)
+        with pytest.raises(AzureRedisConnectionError):
+            await storage.connect()
+        client.aclose.assert_awaited_once()
+        assert storage._connection is None
+        await storage.connect()
+        await storage.close()
 
 
 def test_redis_memory_lifecycle() -> None:
@@ -148,9 +272,14 @@ async def test_keyvault_missing_configuration_and_value() -> None:
             storage._get_auth_token()
 
         async_storage = AsyncAzureRedisStorage(current)
-        async_client = Mock(get_secret=AsyncMock(return_value=SimpleNamespace(value=None)))
+        async_client = Mock(
+            get_secret=AsyncMock(return_value=SimpleNamespace(value=None)), close=AsyncMock()
+        )
         with (
-            patch("nexamem.storage.azure_redis.AsyncDefaultAzureCredential"),
+            patch(
+                "nexamem.storage.azure_redis.AsyncDefaultAzureCredential",
+                return_value=Mock(close=AsyncMock()),
+            ),
             patch("nexamem.storage.azure_redis.AsyncSecretClient", return_value=async_client),
             pytest.raises(AzureRedisConnectionError),
         ):

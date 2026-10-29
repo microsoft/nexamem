@@ -3,12 +3,14 @@
 import builtins
 import uuid
 from collections.abc import Callable
-from typing import Any, TypeVar, cast
+from types import TracebackType
+from typing import Any, Self, TypeVar, cast
 
 from .channels import ChannelConfig, ChannelManager
 from .config.aimemory import AIMemoryConfig
 from .di import DIContainer, ServiceProvider
 from .memory_scope import MemoryScope
+from .retention import expired, retained_metadata
 from .storage import BaseAsyncStorage, BaseStorage, StorageFactory
 from .telemetry import trace_async_operation, trace_operation
 
@@ -45,6 +47,7 @@ class AIMemory:
     def __init__(self, config: AIMemoryConfig, container: DIContainer | None = None) -> None:
         self.config = config
         self.container = container or DIContainer()
+        self._owns_storage = not self.container.is_registered(BaseStorage)
 
         # Register storage provider if not already registered
         if not self.container.is_registered(BaseStorage):
@@ -58,6 +61,44 @@ class AIMemory:
             yaml_path=config.channels_yaml, strict_validation=config.strict_yaml_validation
         )
 
+    def close(self) -> None:
+        """Release storage created by this facade, not externally registered storage."""
+        if self._owns_storage:
+            self._storage.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def _retrieve_live(self, memory_id: str) -> dict[str, Any] | None:
+        record = self._storage.retrieve_memory(memory_id)
+        if record is not None and expired(record):
+            self._storage.delete_memory(memory_id)
+            return None
+        return record
+
+    def _live_ids(self, ids: builtins.list[str], limit: int | None) -> builtins.list[str]:
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be nonnegative")
+        result = [memory_id for memory_id in ids if self._retrieve_live(memory_id) is not None]
+        return result if limit is None else result[:limit]
+
+    def purge_expired(self, scope: str | None = None) -> int:
+        """Delete expired records in a scope, or all scopes when omitted."""
+        deleted = 0
+        for memory_id in self._storage.list_memories(scope=scope):
+            record = self._storage.retrieve_memory(memory_id)
+            if record is not None and expired(record) and self._storage.delete_memory(memory_id):
+                deleted += 1
+        return deleted
+
     @trace_operation("store")
     def store(
         self,
@@ -65,6 +106,8 @@ class AIMemory:
         memory_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         scope: str | None = None,
+        *,
+        ttl_sec: int | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         if memory_id is None:
@@ -73,7 +116,9 @@ class AIMemory:
         success = self._storage.store_memory(
             memory_id=memory_id,
             content=content,
-            metadata=metadata,
+            metadata=retained_metadata(
+                metadata, ttl_sec if ttl_sec is not None else self.config.default_ttl_sec
+            ),
             scope=scope or self.config.default_scope,
         )
 
@@ -85,7 +130,7 @@ class AIMemory:
     @trace_operation("retrieve")
     def retrieve(self, memory_id: str) -> dict[str, Any] | None:
         """Retrieve a memory by ID."""
-        return self._storage.retrieve_memory(memory_id)
+        return self._retrieve_live(memory_id)
 
     @trace_operation("delete")
     def delete(self, memory_id: str) -> bool:
@@ -95,15 +140,18 @@ class AIMemory:
     @trace_operation("list")
     def list(self, scope: str | None = None, limit: int | None = None) -> list[str]:
         """List memory IDs, optionally filtered by scope."""
-        return self._storage.list_memories(scope=scope or self.config.default_scope, limit=limit)
+        return self._live_ids(
+            self._storage.list_memories(scope=scope or self.config.default_scope), limit
+        )
 
     @trace_operation("search")
     def search(
         self, query: str, scope: str | None = None, limit: int | None = None
     ) -> builtins.list[str]:
         """Search memories by content."""
-        return self._storage.search_memories(
-            query=query, scope=scope or self.config.default_scope, limit=limit
+        return self._live_ids(
+            self._storage.search_memories(query=query, scope=scope or self.config.default_scope),
+            limit,
         )
 
     @trace_operation("get_audit_log")
@@ -116,6 +164,7 @@ class AIMemory:
     @trace_operation("get_stats")
     def get_stats(self) -> dict[str, Any]:
         """Get storage statistics."""
+        self.purge_expired()
         return self._storage.get_stats()
 
     @trace_operation("clear_scope")
@@ -175,8 +224,6 @@ class AIMemory:
 
             raise ChannelNotFound(f"Channel '{channel}' not found")
 
-        # For now, store as a simple memory with channel metadata
-        # Future enhancement: implement full policy validation, encryption, etc.
         memory_id = str(uuid.uuid4())
 
         metadata = {
@@ -191,7 +238,10 @@ class AIMemory:
         success = self._storage.store_memory(
             memory_id=memory_id,
             content=content if isinstance(content, str) else content.decode("utf-8"),
-            metadata=metadata,
+            metadata=retained_metadata(
+                metadata,
+                ttl_override if ttl_override is not None else self.list_channels()[channel].ttl_sec,
+            ),
             scope=scope.get_key_prefix(channel),
         )
 
@@ -225,11 +275,11 @@ class AIMemory:
 
         # Query memories for this scope and channel
         scope_key = scope.get_key_prefix(channel)
-        memory_ids = self._storage.list_memories(scope=scope_key, limit=max_msgs)
+        memory_ids = self.list(scope=scope_key, limit=max_msgs)
 
         messages = []
         for memory_id in memory_ids:
-            memory = self._storage.retrieve_memory(memory_id)
+            memory = self._retrieve_live(memory_id)
             if memory and memory.get("metadata", {}).get("channel") == channel:
                 messages.append(memory["content"])
 
@@ -252,6 +302,7 @@ class AsyncAIMemory:
     def __init__(self, config: AIMemoryConfig, container: DIContainer | None = None) -> None:
         self.config = config
         self.container = container or DIContainer()
+        self._owns_storage = not self.container.is_registered(BaseAsyncStorage)
 
         # Register storage provider if not already registered
         if not self.container.is_registered(BaseAsyncStorage):
@@ -265,6 +316,54 @@ class AsyncAIMemory:
             yaml_path=config.channels_yaml, strict_validation=config.strict_yaml_validation
         )
 
+    async def aclose(self) -> None:
+        """Release storage created by this facade, not externally registered storage."""
+        if self._owns_storage:
+            await self._storage.close()
+
+    async def close(self) -> None:
+        """Alias for aclose."""
+        await self.aclose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
+
+    async def _retrieve_live(self, memory_id: str) -> dict[str, Any] | None:
+        record = await self._storage.retrieve_memory(memory_id)
+        if record is not None and expired(record):
+            await self._storage.delete_memory(memory_id)
+            return None
+        return record
+
+    async def _live_ids(self, ids: builtins.list[str], limit: int | None) -> builtins.list[str]:
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be nonnegative")
+        result = [
+            memory_id for memory_id in ids if await self._retrieve_live(memory_id) is not None
+        ]
+        return result if limit is None else result[:limit]
+
+    async def purge_expired(self, scope: str | None = None) -> int:
+        """Delete expired records in a scope, or all scopes when omitted."""
+        deleted = 0
+        for memory_id in await self._storage.list_memories(scope=scope):
+            record = await self._storage.retrieve_memory(memory_id)
+            if (
+                record is not None
+                and expired(record)
+                and await self._storage.delete_memory(memory_id)
+            ):
+                deleted += 1
+        return deleted
+
     @trace_async_operation("store")
     async def store(
         self,
@@ -272,6 +371,8 @@ class AsyncAIMemory:
         memory_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         scope: str | None = None,
+        *,
+        ttl_sec: int | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         if memory_id is None:
@@ -280,7 +381,9 @@ class AsyncAIMemory:
         success = await self._storage.store_memory(
             memory_id=memory_id,
             content=content,
-            metadata=metadata,
+            metadata=retained_metadata(
+                metadata, ttl_sec if ttl_sec is not None else self.config.default_ttl_sec
+            ),
             scope=scope or self.config.default_scope,
         )
 
@@ -292,7 +395,7 @@ class AsyncAIMemory:
     @trace_async_operation("retrieve")
     async def retrieve(self, memory_id: str) -> dict[str, Any] | None:
         """Retrieve a memory by ID."""
-        return await self._storage.retrieve_memory(memory_id)
+        return await self._retrieve_live(memory_id)
 
     @trace_async_operation("delete")
     async def delete(self, memory_id: str) -> bool:
@@ -302,8 +405,8 @@ class AsyncAIMemory:
     @trace_async_operation("list")
     async def list(self, scope: str | None = None, limit: int | None = None) -> list[str]:
         """List memory IDs, optionally filtered by scope."""
-        return await self._storage.list_memories(
-            scope=scope or self.config.default_scope, limit=limit
+        return await self._live_ids(
+            await self._storage.list_memories(scope=scope or self.config.default_scope), limit
         )
 
     @trace_async_operation("search")
@@ -311,8 +414,11 @@ class AsyncAIMemory:
         self, query: str, scope: str | None = None, limit: int | None = None
     ) -> builtins.list[str]:
         """Search memories by content."""
-        return await self._storage.search_memories(
-            query=query, scope=scope or self.config.default_scope, limit=limit
+        return await self._live_ids(
+            await self._storage.search_memories(
+                query=query, scope=scope or self.config.default_scope
+            ),
+            limit,
         )
 
     @trace_async_operation("get_audit_log")
@@ -325,6 +431,7 @@ class AsyncAIMemory:
     @trace_async_operation("get_stats")
     async def get_stats(self) -> dict[str, Any]:
         """Get storage statistics."""
+        await self.purge_expired()
         return await self._storage.get_stats()
 
     @trace_async_operation("clear_scope")
@@ -384,8 +491,6 @@ class AsyncAIMemory:
 
             raise ChannelNotFound(f"Channel '{channel}' not found")
 
-        # For now, store as a simple memory with channel metadata
-        # Future enhancement: implement full policy validation, encryption, etc.
         memory_id = str(uuid.uuid4())
 
         metadata = {
@@ -400,7 +505,10 @@ class AsyncAIMemory:
         success = await self._storage.store_memory(
             memory_id=memory_id,
             content=content if isinstance(content, str) else content.decode("utf-8"),
-            metadata=metadata,
+            metadata=retained_metadata(
+                metadata,
+                ttl_override if ttl_override is not None else self.list_channels()[channel].ttl_sec,
+            ),
             scope=scope.get_key_prefix(channel),
         )
 
@@ -434,11 +542,11 @@ class AsyncAIMemory:
 
         # Query memories for this scope and channel
         scope_key = scope.get_key_prefix(channel)
-        memory_ids = await self._storage.list_memories(scope=scope_key, limit=max_msgs)
+        memory_ids = await self.list(scope=scope_key, limit=max_msgs)
 
         messages = []
         for memory_id in memory_ids:
-            memory = await self._storage.retrieve_memory(memory_id)
+            memory = await self._retrieve_live(memory_id)
             if memory and memory.get("metadata", {}).get("channel") == channel:
                 messages.append(memory["content"])
 

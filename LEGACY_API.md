@@ -20,6 +20,8 @@ Legacy initialization is process-global. Configure it once per application and i
 
 The new facades' channel methods are compatibility conveniences, not a guarantee of the legacy Redis policy behavior. See [architecture](NEW_ARCHITECTURE.md) for unenforced options and retention limitations.
 
+New-facade writes now apply channel TTL or a positive explicit override. Generic records support `default_ttl_sec` and per-write `ttl_sec`. Expiry is recorded in reserved metadata `_nexamem_expires_at`; old records without it remain nonexpiring until explicitly rewritten with a TTL. Legacy classes and direct backend APIs do not inherit this logical-expiry contract. Plan migration and audit/backup retention explicitly rather than assuming old data disappears after upgrade.
+
 ## Python and Dependencies
 
 The next release requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting it. Legacy import names are retained; runtime-version support is not.
@@ -47,5 +49,7 @@ Keep delimiter-free, application-validated scope identifiers and channel names. 
 - Failed JSON serialization no longer overwrites an existing file record.
 - Redis generic-memory overwrite operations update scope membership; collection erasure removes only the requested user's/session's message fields and indexes.
 - Legacy Redis queries skip non-string index keys, and sync audit reads use the Redis stream range API correctly.
+- New facades support owned-resource context managers; DI-supplied storage remains borrowed. Async file/SQLite data operations offload I/O and wait for an in-flight worker before propagating cancellation.
+- Optional framework adapters are independent of legacy `ChatHistory`; see [their public contracts](INTEGRATIONS.md).
 
 Test application-specific ordering, storage formats, and retention assumptions on a copy of production data before rollout.

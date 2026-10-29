@@ -9,6 +9,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from urllib.parse import quote, unquote
 
+from ._async import run_sync
 from .base import BaseAsyncStorage, BaseStorage
 
 
@@ -308,39 +309,34 @@ class AsyncFileStorage(BaseAsyncStorage):
         scope: str | None = None,
     ) -> bool:
         """Store memory to file (async)."""
-        async with self._lock:
-            return self._sync_storage.store_memory(memory_id, content, metadata, scope)
+        return await run_sync(
+            self._lock, self._sync_storage.store_memory, memory_id, content, metadata, scope
+        )
 
     async def retrieve_memory(self, memory_id: str) -> dict[str, Any] | None:
         """Retrieve memory from file (async)."""
-        async with self._lock:
-            return self._sync_storage.retrieve_memory(memory_id)
+        return await run_sync(self._lock, self._sync_storage.retrieve_memory, memory_id)
 
     async def delete_memory(self, memory_id: str) -> bool:
         """Delete memory file (async)."""
-        async with self._lock:
-            return self._sync_storage.delete_memory(memory_id)
+        return await run_sync(self._lock, self._sync_storage.delete_memory, memory_id)
 
     async def list_memories(self, scope: str | None = None, limit: int | None = None) -> list[str]:
         """List memory IDs (async)."""
-        async with self._lock:
-            return self._sync_storage.list_memories(scope, limit)
+        return await run_sync(self._lock, self._sync_storage.list_memories, scope, limit)
 
     async def search_memories(
         self, query: str, scope: str | None = None, limit: int | None = None
     ) -> list[str]:
         """Search memories (async)."""
-        async with self._lock:
-            return self._sync_storage.search_memories(query, scope, limit)
+        return await run_sync(self._lock, self._sync_storage.search_memories, query, scope, limit)
 
     async def get_audit_log(
         self, memory_id: str | None = None, limit: int | None = None
     ) -> list[dict[str, Any]]:
         """Get audit log (async)."""
-        async with self._lock:
-            return self._sync_storage.get_audit_log(memory_id, limit)
+        return await run_sync(self._lock, self._sync_storage.get_audit_log, memory_id, limit)
 
     async def get_stats(self) -> dict[str, Any]:
         """Get statistics (async)."""
-        async with self._lock:
-            return self._sync_storage.get_stats()
+        return await run_sync(self._lock, self._sync_storage.get_stats)

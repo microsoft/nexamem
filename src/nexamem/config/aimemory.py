@@ -12,6 +12,9 @@ class AIMemoryConfig(BaseModel):
 
     # Core configuration
     default_scope: str | None = Field(None, description="Default scope for memory operations")
+    default_ttl_sec: int | None = Field(
+        default=None, gt=0, description="Default logical record lifetime in seconds"
+    )
 
     # Storage configuration
     storage: StorageConfig
@@ -44,6 +47,9 @@ class AIMemoryConfig(BaseModel):
 
         return cls(
             default_scope=os.getenv("NEXAMEM_DEFAULT_SCOPE", "default"),
+            default_ttl_sec=int(os.environ["NEXAMEM_DEFAULT_TTL_SEC"])
+            if os.getenv("NEXAMEM_DEFAULT_TTL_SEC")
+            else None,
             storage=StorageConfig.from_env(),
             channels_yaml=os.getenv("NEXAMEM_CHANNELS_YAML"),
             strict_yaml_validation=os.getenv("NEXAMEM_STRICT_YAML_VALIDATION", "true").lower()

@@ -44,12 +44,16 @@ Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https:
 
 Scope names and environment prefixes are logical namespaces, not authentication or authorization. Validate identifiers in the application and authorize access before each operation. Avoid delimiter and Redis-glob characters in untrusted scope components. Do not expose raw storage APIs or caller-controlled SQL fragments directly to users.
 
-The configuration-driven facade does not implement client-side encryption or automatically enforce TTL, quota, or PII options. Policy/content-processing helpers are separate components. Protect stored content through application controls, filesystem/database permissions, network restrictions, and backing-service configuration.
+The configuration-driven facade enforces logical expiry on its record reads, listings, searches, and channel reads. It does not implement client-side encryption or automatically enforce quota or PII options. Policy/content-processing helpers are separate components. Protect stored content through application controls, filesystem/database permissions, network restrictions, and backing-service configuration.
+
+Logical expiry is not a physical-deletion deadline: there is no background purge, audit/backup deletion, or transactional protection against concurrent replacements. Raw backend and legacy reads bypass facade expiry. The reserved metadata field `_nexamem_expires_at` must not be caller-supplied. Authorize `purge_expired()` carefully: without a scope it scans all scopes. See [retention guarantees](NEW_ARCHITECTURE.md#retention-and-lifecycle).
 
 Redis collection TTL applies to shared hashes/indexes, and audit-stream TTL is refreshed on later events. These mechanisms do not provide immutable per-record retention, tamper evidence, or compliance certification. Redis checkpoint helpers use an environment/agent namespace rather than full user/session isolation.
 
-TLS certificate verification is enabled on the repaired Redis paths. Do not disable it. Supply credentials through approved external configuration, prefer managed identity where supported, and manage credential/token lifecycle explicitly; automatic token renewal is not implemented by this package.
+TLS certificate verification is required on the repaired Redis paths. Do not disable it. Supply credentials through approved external configuration and prefer managed identity. Entra Redis connections use redis-entraid streaming renewal and token-derived usernames; close owned facades to stop renewal resources and release credentials. Key Vault-backed access keys require reconnecting after rotation. Verify actual Redis data-plane permissions, network policy, long-lived refresh, and failover before deployment.
 
 File records use encoded names and atomic individual replacements, not transactions across all records/indexes. Account for Windows case-insensitivity, filename length, and concurrent writers. Back up stores and follow [migration guidance](LEGACY_API.md) before upgrading.
+
+Framework adapters add no authorization or prompt-injection security boundary. Stored reference content may be untrusted; validate authorship and apply application trust controls before injecting it into agent context. Avoid duplicating Foundry-managed conversation state with application-managed history. Framework SDK telemetry and model-client data collection are outside NexaMem's instrumentation guarantees.
 
 Unit tests use local stores, fakeredis, and mocked identity services. They are not a security audit or live Azure validation. Report vulnerabilities through MSRC using the instructions above, not public GitHub issues.

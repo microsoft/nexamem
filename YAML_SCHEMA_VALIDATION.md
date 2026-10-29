@@ -39,4 +39,4 @@ assert "channels" in validated
 `YamlSchemaError` reports invalid schema data; file/YAML parsing failures may also raise. `strict_yaml_validation=False` permits the less restrictive compatibility loading path and should be used only for reviewed legacy configuration.
 
 > [!WARNING]
-> Validating `encrypt`, `ttl_sec`, or `quota_bytes` does not encrypt data or enforce retention/quota limits in the new facade. Those values describe configuration, not security guarantees. See [architecture](NEW_ARCHITECTURE.md) and [security](SECURITY.md).
+> Channel `ttl_sec` now controls per-record logical expiry in the new facade. This does not guarantee immediate physical erasure, audit/backup deletion, or background cleanup. Validating `encrypt` or `quota_bytes` still does not activate encryption or quota enforcement. See [architecture](NEW_ARCHITECTURE.md) and [security](SECURITY.md).

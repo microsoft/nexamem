@@ -49,6 +49,17 @@ def test_redis_environment_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("clean_storage_environment")
+def test_system_managed_identity_environment(monkeypatch):
+    monkeypatch.setenv("AZURE_REDIS_HOSTNAME", "unit.eastus.redis.azure.net")
+    monkeypatch.setenv("AZURE_REDIS_AUTH_METHOD", "entra_id")
+    config = AzureRedisConfig.from_env()
+    assert config.use_entra_id and config.port == 10000
+    assert config.client_id is None
+    with pytest.raises(ValueError, match="database 0"):
+        AzureRedisConfig(hostname=config.hostname, access_key="test", db=1)
+
+
+@pytest.mark.usefixtures("clean_storage_environment")
 @pytest.mark.parametrize(
     "auth_method,environment",
     [

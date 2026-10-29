@@ -3,7 +3,9 @@ Azure Cache for Redis storage implementation.
 Provides both sync and async storage adapters with enterprise features.
 """
 
+import asyncio
 import json
+import threading
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
@@ -44,6 +46,7 @@ else:
 from ..config.storage import AzureAuthMethod, AzureRedisConfig
 from ..memory_scope import MemoryScope
 from .base import BaseAsyncStorage, BaseStorage
+from .entra import RedisEntraCredentials
 
 RedisClientT = TypeVar("RedisClientT", "redis.Redis", "redis_async.Redis")
 
@@ -295,6 +298,8 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
         self._connection: redis_async.Redis | None = None
         self._channel_collections: AzureRedisCollections[redis_async.Redis] | None = None
         self._connection_pool: redis_async.ConnectionPool | None = None
+        self._connect_lock = asyncio.Lock()
+        self._entra_credentials: RedisEntraCredentials | None = None
 
     @property
     def _client(self) -> redis_async.Redis:
@@ -329,8 +334,11 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
 
             # Use Azure Identity for token
             credential = AsyncDefaultAzureCredential()
-            token = await credential.get_token("https://redis.azure.com/.default")
-            return token.token
+            try:
+                token = await credential.get_token("https://redis.azure.com/.default")
+                return token.token
+            finally:
+                await credential.close()
 
         elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
             if AsyncSecretClient is None or AsyncDefaultAzureCredential is None:
@@ -345,15 +353,24 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
             secret_client = AsyncSecretClient(
                 vault_url=self.config.keyvault_url, credential=credential
             )
-            secret = await secret_client.get_secret(self.config.secret_name)
-            if secret.value is None:
-                raise AzureRedisConnectionError("Key Vault secret has no value")
-            return secret.value
+            try:
+                secret = await secret_client.get_secret(self.config.secret_name)
+                if secret.value is None:
+                    raise AzureRedisConnectionError("Key Vault secret has no value")
+                return secret.value
+            finally:
+                await secret_client.close()
+                await credential.close()
 
         else:
             raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
 
     async def connect(self) -> None:
+        """Serialize lazy connection creation and clean up failed attempts."""
+        async with self._connect_lock:
+            await self._connect()
+
+    async def _connect(self) -> None:
         """Establish connection to Azure Cache for Redis."""
         if self._connection:
             return
@@ -363,20 +380,29 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
 
         try:
             # Get authentication token
-            password = await self._get_auth_token()
+            authentication: dict[str, Any]
+            if self.config.auth_method == AzureAuthMethod.ENTRA_ID:
+                self._entra_credentials = RedisEntraCredentials(self.config)
+                authentication = {"credential_provider": self._entra_credentials}
+            else:
+                authentication = {
+                    "password": await self._get_auth_token(),
+                    "username": self.config.username,
+                }
 
             # Create Redis client directly (no connection pool for Azure SSL)
             # Azure Redis requires SSL and connection pools have SSL parameter issues
             self._client = redis_async.Redis(
                 host=self.config.hostname,
                 port=self.config.port,
-                password=password,
+                **authentication,
                 ssl=self.config.ssl,
                 ssl_cert_reqs="required",
                 db=self.config.db,
                 socket_connect_timeout=self.config.socket_connect_timeout,
                 socket_timeout=self.config.socket_timeout,
                 decode_responses=True,
+                max_connections=self.config.max_connections,
             )
 
             self._collections = AzureRedisCollections(self._client, self.config.collection_prefix)
@@ -384,8 +410,27 @@ class AsyncAzureRedisStorage(BaseAsyncStorage):
             # Test connection
             await self._client.ping()
 
-        except Exception as e:
-            raise AzureRedisConnectionError(f"Failed to connect to Azure Redis: {e}") from e
+        except BaseException as error:
+            await self._close_connection()
+            if not isinstance(error, Exception):
+                raise
+            raise AzureRedisConnectionError("Failed to connect to Azure Redis") from error
+
+    async def _close_connection(self) -> None:
+        try:
+            if self._connection is not None:
+                await self._connection.aclose()
+        finally:
+            self._connection = None
+            self._channel_collections = None
+            if self._entra_credentials is not None:
+                await asyncio.to_thread(self._entra_credentials.close)
+                self._entra_credentials = None
+
+    async def close(self) -> None:
+        """Close the pool and stop credential renewal; safe to call repeatedly."""
+        async with self._connect_lock:
+            await self._close_connection()
 
     async def write_message(
         self,
@@ -844,6 +889,8 @@ class AzureRedisStorage(BaseStorage):
         self.config = config
         self._connection: redis.Redis | None = None
         self._channel_collections: AzureRedisCollections[redis.Redis] | None = None
+        self._connect_lock = threading.RLock()
+        self._entra_credentials: RedisEntraCredentials | None = None
 
     @property
     def _client(self) -> redis.Redis:
@@ -878,8 +925,11 @@ class AzureRedisStorage(BaseStorage):
 
             # Use Azure Identity for token
             credential = DefaultAzureCredential()
-            token = credential.get_token("https://redis.azure.com/.default")
-            return token.token
+            try:
+                token = credential.get_token("https://redis.azure.com/.default")
+                return token.token
+            finally:
+                credential.close()
 
         elif self.config.auth_method == AzureAuthMethod.KEYVAULT:
             if SecretClient is None or DefaultAzureCredential is None:
@@ -892,15 +942,24 @@ class AzureRedisStorage(BaseStorage):
                 raise AzureRedisConnectionError("Key Vault URL and secret name are required")
             credential = DefaultAzureCredential()
             secret_client = SecretClient(vault_url=self.config.keyvault_url, credential=credential)
-            secret = secret_client.get_secret(self.config.secret_name)
-            if secret.value is None:
-                raise AzureRedisConnectionError("Key Vault secret has no value")
-            return secret.value
+            try:
+                secret = secret_client.get_secret(self.config.secret_name)
+                if secret.value is None:
+                    raise AzureRedisConnectionError("Key Vault secret has no value")
+                return secret.value
+            finally:
+                secret_client.close()
+                credential.close()
 
         else:
             raise AzureRedisConnectionError(f"Unsupported auth method: {self.config.auth_method}")
 
     def connect(self) -> None:
+        """Serialize lazy connection creation and clean up failed attempts."""
+        with self._connect_lock:
+            self._connect()
+
+    def _connect(self) -> None:
         """Establish connection to Azure Cache for Redis."""
         if self._connection:
             return
@@ -910,18 +969,28 @@ class AzureRedisStorage(BaseStorage):
 
         try:
             # Get authentication token
-            password = self._get_auth_token()
+            authentication: dict[str, Any]
+            if self.config.auth_method == AzureAuthMethod.ENTRA_ID:
+                self._entra_credentials = RedisEntraCredentials(self.config)
+                authentication = {"credential_provider": self._entra_credentials}
+            else:
+                authentication = {
+                    "password": self._get_auth_token(),
+                    "username": self.config.username,
+                }
 
             # Create Redis client
             self._client = redis.Redis(
                 host=self.config.hostname,
                 port=self.config.port,
-                password=password,
+                **authentication,
                 ssl=self.config.ssl,
+                ssl_cert_reqs="required",
                 db=self.config.db,
                 socket_connect_timeout=self.config.socket_connect_timeout,
                 socket_timeout=self.config.socket_timeout,
                 decode_responses=True,
+                max_connections=self.config.max_connections,
             )
 
             self._collections = AzureRedisCollections(self._client, self.config.collection_prefix)
@@ -929,8 +998,11 @@ class AzureRedisStorage(BaseStorage):
             # Test connection
             self._client.ping()
 
-        except Exception as e:
-            raise AzureRedisConnectionError(f"Failed to connect to Azure Redis: {e}") from e
+        except BaseException as error:
+            self.close()
+            if not isinstance(error, Exception):
+                raise
+            raise AzureRedisConnectionError("Failed to connect to Azure Redis") from error
 
     def write_message(
         self,
@@ -1377,5 +1449,13 @@ class AzureRedisStorage(BaseStorage):
 
     def close(self) -> None:
         """Close Azure Redis connection."""
-        if self._connection:
-            self._client.close()
+        with self._connect_lock:
+            try:
+                if self._connection is not None:
+                    self._connection.close()
+            finally:
+                self._connection = None
+                self._channel_collections = None
+                if self._entra_credentials is not None:
+                    self._entra_credentials.close()
+                    self._entra_credentials = None

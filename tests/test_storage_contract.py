@@ -1,16 +1,187 @@
 """Shared storage behavior, using only local temporary data."""
 
+import asyncio
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
+import fakeredis
 import pytest
 
+from nexamem import AIMemory, AIMemoryConfig, AsyncAIMemory, MemoryScope, StorageConfig
+from nexamem.config.storage import AzureRedisConfig
+from nexamem.di import DIContainer
+from nexamem.retention import EXPIRY_FIELD, expired
 from nexamem.storage.base import BaseStorage
 from nexamem.storage.file import AsyncFileStorage, FileStorage
 from nexamem.storage.memory import AsyncMemoryStorage, MemoryStorage
 from nexamem.storage.sqlite import AsyncSQLiteStorage, SQLiteStorage
+
+
+def configured_backend(backend, tmp_path):
+    if backend == "file":
+        return StorageConfig.file(str(tmp_path / "files"))
+    if backend == "sqlite":
+        return StorageConfig.sqlite(str(tmp_path / "memory.db"))
+    if backend == "redis":
+        return StorageConfig.azure_redis(
+            AzureRedisConfig(hostname="unit.redis.cache.windows.net", access_key="test")
+        )
+    return StorageConfig.memory()
+
+
+@pytest.mark.parametrize("backend", ["memory", "file", "sqlite", "redis"])
+def test_facade_retention_boundaries(backend, tmp_path):
+    config = AIMemoryConfig(storage=configured_backend(backend, tmp_path), default_ttl_sec=10)
+    client = fakeredis.FakeRedis(decode_responses=True)
+    with (
+        patch("nexamem.storage.azure_redis.redis.Redis", return_value=client),
+        patch("nexamem.retention.time.time", return_value=100) as clock,
+    ):
+        with AIMemory(config) as memory:
+            metadata = {"kind": "note"}
+            memory.store("same content", "old", metadata, "session")
+            memory.store("same content", "renewed", scope="session", ttl_sec=20)
+            assert EXPIRY_FIELD not in metadata
+            clock.return_value = 110
+            assert memory.retrieve("old") is None
+            assert memory.list("session", limit=1) == ["renewed"]
+            assert memory.search("same", "session", limit=1) == ["renewed"]
+            assert memory.list("session", limit=0) == []
+            with pytest.raises(ValueError):
+                memory.list(limit=-1)
+            with pytest.raises(ValueError):
+                memory.store("invalid", ttl_sec=0)
+            with pytest.raises(ValueError, match="reserved"):
+                memory.store("invalid", metadata={EXPIRY_FIELD: 1})
+            memory.store("updated", "renewed", scope="session", ttl_sec=5)
+            clock.return_value = 115
+            assert memory.purge_expired("other-session") == 0
+            assert memory.purge_expired("session") == 1
+            assert memory.purge_expired() == 0
+            assert memory.get_stats()["total_memories"] == 0
+            memory.store("expires", "stats", scope="session")
+            clock.return_value = 125
+            assert memory.get_stats()["total_memories"] == 0
+
+
+@pytest.mark.parametrize("backend", ["memory", "file", "sqlite", "redis"])
+async def test_async_facade_retention_boundaries(backend, tmp_path):
+    config = AIMemoryConfig(storage=configured_backend(backend, tmp_path))
+    client = fakeredis.FakeAsyncRedis(decode_responses=True)
+    scope = MemoryScope(agent_id="agent", user_id="user", session_id="session", env="test")
+    with (
+        patch("nexamem.storage.azure_redis.redis_async.Redis", return_value=client),
+        patch("nexamem.retention.time.time", return_value=100) as clock,
+    ):
+        async with AsyncAIMemory(config) as memory:
+            memory.register_channel("short", ttl_sec=60)
+            first = await memory.write(scope, "short", "first")
+            await memory.write(scope, "short", "second", ttl_override=120)
+            await memory.store("persistent", "forever", scope="persistent")
+            clock.return_value = 160
+            assert await memory.retrieve(first) is None
+            assert (await memory.read(scope, "short"))[0] == ["second"]
+            assert len(await memory.search("second", scope.get_key_prefix("short"), 1)) == 1
+            assert await memory.list(scope.get_key_prefix("short"), 0) == []
+            with pytest.raises(ValueError):
+                await memory.list(limit=-1)
+            clock.return_value = 220
+            assert await memory.purge_expired() == 1
+            assert await memory.purge_expired() == 0
+            assert (await memory.get_stats())["total_memories"] == 1
+            assert (await memory.retrieve("forever"))["content"] == "persistent"
+            await memory.store("expires", "stats", ttl_sec=1)
+            clock.return_value = 221
+            assert (await memory.get_stats())["total_memories"] == 1
+
+
+def test_sync_channel_retention_and_invalid_expiry():
+    scope = MemoryScope(agent_id="agent", user_id="user", session_id="session", env="test")
+    with patch("nexamem.retention.time.time", return_value=100) as clock:
+        memory = AIMemory(AIMemoryConfig(storage=StorageConfig.memory()))
+        memory.register_channel("short", ttl_sec=60)
+        memory.write(scope, "short", "first", ttl_override=1)
+        memory.write(scope, "short", "second")
+        clock.return_value = 101
+        assert memory.read(scope, "short")[0] == ["second"]
+        clock.return_value = 160
+        assert memory.read(scope, "short")[0] == []
+    assert expired({"metadata": {EXPIRY_FIELD: "invalid"}})
+    assert expired({"metadata": {EXPIRY_FIELD: float("nan")}})
+    assert not expired({"metadata": {}})
+
+
+async def test_facade_lifecycle_ownership():
+    config = AIMemoryConfig(storage=StorageConfig.memory())
+    memory = AIMemory(config)
+    memory._storage.close = Mock()
+    with memory:
+        pass
+    memory._storage.close.assert_called_once()
+    container = DIContainer()
+    container.register(
+        BaseStorage,
+        Mock(can_provide=Mock(return_value=True), provide=Mock(return_value=memory._storage)),
+    )
+    with AIMemory(config, container):
+        pass
+    memory._storage.close.assert_called_once()
+
+    async_memory = AsyncAIMemory(config)
+    async_memory._storage.close = AsyncMock()
+    async with async_memory:
+        pass
+    async_memory._storage.close.assert_awaited_once()
+    from nexamem.storage.base import BaseAsyncStorage
+
+    container = DIContainer()
+    container.register(
+        BaseAsyncStorage,
+        Mock(can_provide=Mock(return_value=True), provide=Mock(return_value=async_memory._storage)),
+    )
+    async with AsyncAIMemory(config, container):
+        pass
+    async_memory._storage.close.assert_awaited_once()
+    await async_memory.close()
+    assert async_memory._storage.close.await_count == 2
+    with MemoryStorage():
+        pass
+    async with AsyncMemoryStorage() as backend:
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("backend", [AsyncFileStorage, AsyncSQLiteStorage])
+async def test_local_async_io_runs_in_worker_and_serializes_cancellation(backend, tmp_path):
+    storage = backend(str(tmp_path / "data"))
+    started, release = threading.Event(), threading.Event()
+    thread_ids = []
+
+    def operation(*args):
+        thread_ids.append(threading.get_ident())
+        started.set()
+        assert release.wait(5)
+        return True
+
+    storage._sync_storage.store_memory = operation
+    first = asyncio.create_task(storage.store_memory("one", "content"))
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        assert thread_ids == [thread_ids[0]] and thread_ids[0] != threading.get_ident()
+        first.cancel()
+        second = asyncio.create_task(storage.store_memory("two", "content"))
+        await asyncio.get_running_loop().run_in_executor(None, lambda: None)
+        first.cancel()
+        await asyncio.get_running_loop().run_in_executor(None, lambda: None)
+        assert not first.done() and len(thread_ids) == 1
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert await second
+    assert len(thread_ids) == 2
 
 
 @pytest.fixture(params=["memory", "file", "sqlite"])

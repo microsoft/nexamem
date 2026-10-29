@@ -5,11 +5,27 @@ Provides both synchronous and asynchronous interfaces for maximum flexibility.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 
 class BaseStorage(ABC):
     """Base synchronous storage interface for AI memory management."""
+
+    def close(self) -> None:
+        """Release owned resources; local backends have no persistent handles."""
+        return None
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
     @abstractmethod
     def store_memory(
@@ -112,6 +128,25 @@ class BaseStorage(ABC):
 
 class BaseAsyncStorage(ABC):
     """Base asynchronous storage interface for AI memory management."""
+
+    async def close(self) -> None:
+        """Release owned resources; local backends have no persistent handles."""
+        return None
+
+    async def aclose(self) -> None:
+        """Release owned resources using the conventional async lifecycle name."""
+        await self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.close()
 
     @abstractmethod
     async def store_memory(
