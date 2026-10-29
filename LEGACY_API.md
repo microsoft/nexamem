@@ -32,7 +32,7 @@ New-facade writes now apply channel TTL or a positive explicit override. Generic
 
 ## Python and Dependencies
 
-NexaMem 1.0 requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting 1.0. Legacy import names are retained; support for those older runtimes is not. The verified candidate matrix covers Python 3.11, 3.12, and 3.13; final stable validation is tracked in [release status](PROJECT_STATUS.md).
+NexaMem 1.0 requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting 1.0. Legacy import names are retained; support for those older runtimes is not. The stable release passed the Python 3.11, 3.12, and 3.13 matrix on Linux, macOS, and Windows; see [release verification](PROJECT_STATUS.md).
 
 ## File Storage Migration
 

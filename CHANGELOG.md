@@ -1,18 +1,18 @@
 # Changelog
 
-## 1.0.0 - Unreleased
+## 1.0.0 - 2026-10-29
 
-Stable release preparation, not a production publication. Package and module metadata are `1.0.0`; the intended classifier is Production/Stable. The feature and repair inventory is recorded under the verified `1.0.0rc1` candidate below. The final stable commit and distributions must be validated independently; see [release status](PROJECT_STATUS.md).
+Published the first stable release to [PyPI](https://pypi.org/project/nexamem/1.0.0/) from tag `v1.0.0` at commit `8a251619da8149235f8b03d06a381cec6518e055`. Package and module metadata are `1.0.0`, with the Production/Stable classifier. This release includes the authentication, lifecycle, retention, optional integrations, and repairs detailed under `1.0.0rc1` below. The stable commit passed CI and CodeQL; production archive digests and clean installations were verified independently. See [release verification](PROJECT_STATUS.md), including the direct-download network limitation.
 
-### Release Preparation
+### Stable Release
 
 - Define the documented v1 public-interface compatibility policy and retain legacy compatibility entry points throughout 1.x, with removals reserved for a future major release.
-- Clarify source installation before publication, version-pinned stable installation after publication, persisted-data migration, and framework compatibility limits.
+- Document version-pinned stable installation, source setup, persisted-data migration, and framework compatibility limits.
 - Document the single-maintainer release process and the decision to enable required pull requests after v1 deployment, without changing repository protections.
 
 ## 1.0.0rc1 - Release Candidate
 
-Published to TestPyPI on 2026-10-29 and independently verified; not a production PyPI release. Its package and module versions are `1.0.0rc1`. The proposed stable version is tracked separately in [release status](PROJECT_STATUS.md).
+Published to TestPyPI on 2026-10-29 and independently verified; not a production PyPI release. Its package and module versions are `1.0.0rc1`. The subsequent stable release is tracked separately in [release status](PROJECT_STATUS.md).
 
 ### Added
 

@@ -1,6 +1,6 @@
 # Framework Integrations
 
-These integrations target the [proposed 1.0 release](PROJECT_STATUS.md), not an older PyPI package. Until stable publication is verified, install from the reviewed source checkout with pip. After publication, version-pinned extras such as `nexamem[langchain]==1.0.0` select the stable package. The base package does not import framework SDKs; direct adapter imports require the matching extra. See the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
+These integrations are available in the [published 1.0.0 release](https://pypi.org/project/nexamem/1.0.0/). Install only the extras your application uses; version-pinned extras such as `nexamem[langchain]==1.0.0` select the stable package. The base package does not import framework SDKs; direct adapter imports require the matching extra. See [release verification](PROJECT_STATUS.md) and the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
 
 | Extra | Contract | Validated SDK |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ These integrations target the [proposed 1.0 release](PROJECT_STATUS.md), not an 
 | `agent-framework` | `HistoryProvider` | agent-framework-core 1.22.0 |
 
 ```shell
-python -m pip install -e ".[langchain,autogen,semantic-kernel,agent-framework]"
+python -m pip install "nexamem[langchain,autogen,semantic-kernel,agent-framework]==1.0.0"
 python -m pip check
 ```
 

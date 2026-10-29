@@ -20,7 +20,7 @@ Validate local documentation links and heading anchors, parse Python examples, a
 
 ## Pull Requests and Enforcement
 
-The maintainer plans to enable required pull requests after 1.0 is deployed. This release preparation does not enable branch protection or change repository settings. Until then, complete the checks above and the full CI/distribution workflow before a release; workflow success is not the same as enforced merge protection.
+The maintainer plans to enable required pull requests after 1.0 is deployed. The 1.0.0 release did not enable branch protection or change repository protection settings. Until enforcement is enabled, complete the checks above and the full CI/distribution workflow before a release; workflow success is not the same as enforced merge protection.
 
 After deployment, require PRs and passing CI/CodeQL checks on the default branch. For a single-maintainer repository, do not require approval from the PR author: GitHub does not allow self-approval. Only require additional reviewer or code-owner approval when an eligible second reviewer is available. Configure branch rules and release-environment permissions explicitly rather than assuming CODEOWNERS or workflow YAML provides them.
 

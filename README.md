@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/microsoft/nexamem/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/nexamem/actions/workflows/ci.yml)
 [![PyPI release](https://img.shields.io/pypi/v/nexamem)](https://pypi.org/project/nexamem/)
-[![1.0.0 prepared: not released](https://img.shields.io/badge/1.0.0-prepared_not_released-yellow)](PROJECT_STATUS.md)
+[![1.0.0 released](https://img.shields.io/badge/1.0.0-released-brightgreen)](PROJECT_STATUS.md)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Azure Managed Redis compatible](https://img.shields.io/badge/Azure_Managed_Redis-compatible-0078D4)](INSTALLATION.md#azure-cache-for-redis)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -27,23 +27,23 @@ Start locally with in-memory storage, JSON files, or SQLite, then move to Azure 
 
 Your application decides what to remember and what to include in a model's context. NexaMem supplies storage and text-based search, not automatic memory extraction, embeddings, or semantic retrieval.
 
-> [!IMPORTANT]
-> This checkout prepares `1.0.0`; it is not yet published to PyPI. The preceding `1.0.0rc1` candidate was published to TestPyPI and verified independently. Use the source setup below until stable publication is confirmed. See [release status](PROJECT_STATUS.md), [changes](CHANGELOG.md), and the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
+> [!NOTE]
+> NexaMem `1.0.0` is [published on PyPI](https://pypi.org/project/nexamem/1.0.0/). See [release verification](PROJECT_STATUS.md), [changes](CHANGELOG.md), and the [v1 compatibility policy](LEGACY_API.md#v1-compatibility-policy).
 
 ## Install
 
-This checkout requires Python 3.11 or newer. CI targets Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. Published older versions may have different requirements.
+NexaMem 1.0 requires Python 3.11 or newer. The stable release passed CI on Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. Published older versions may have different requirements.
 
-The examples below target the proposed 1.0 release in this checkout, not an older PyPI package. Clone or download this repository, select the reviewed release-preparation commit, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
+Create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then install the stable release:
 
 ```shell
-python -m pip install -e .
+python -m pip install "nexamem==1.0.0"
 python -m pip check
 ```
 
-To install the currently published release instead, use `python -m pip install nexamem` and documentation matching its installed version. After `1.0.0` is published and verified, install that release with `python -m pip install "nexamem==1.0.0"`; that command is not available before publication. Review [migration notes](LEGACY_API.md) before upgrading an existing store.
+The examples below target 1.0.0, not older package versions. Review [migration notes](LEGACY_API.md) before upgrading an existing store.
 
-Contributors can install `python -m pip install -e ".[dev]"` instead to add test and development tools. No uv installation or commands are required. The local quick starts below need no Azure account, credentials, YAML configuration, or telemetry setup.
+Contributors can follow the [source setup](INSTALLATION.md#install-from-source) and install `python -m pip install -e ".[dev]"` to add test and development tools. No uv installation or commands are required. The local quick starts below need no Azure account, credentials, YAML configuration, or telemetry setup.
 
 ## Quick Start
 
@@ -117,9 +117,9 @@ Redis, redis-entraid, fakeredis, PyYAML, and Azure identity/Key Vault clients re
 [![Semantic Kernel 1.x](https://img.shields.io/badge/Semantic_Kernel-1.x-512BD4)](INTEGRATIONS.md#semantic-kernel)
 [![Microsoft Agent Framework 1.22](https://img.shields.io/badge/Microsoft_Agent_Framework-1.22-0078D4)](INTEGRATIONS.md#microsoft-agent-framework)
 
-Optional integrations prepared for 1.0; these badges indicate adapter compatibility, not framework endorsement or availability in an older PyPI package. Supported SDK ranges and tested versions are recorded in the integration guide.
+Optional integrations are included in 1.0; these badges indicate adapter compatibility, not framework endorsement or availability in an older PyPI package. Supported SDK ranges and tested versions are recorded in the integration guide.
 
-Install only the framework extra you use, for example `python -m pip install -e ".[agent-framework]"`. Framework packages are not imported by the base package. The integrations provide LangChain typed chat history, AutoGen text memory, Semantic Kernel `ChatHistory` snapshot persistence, and an Agent Framework `HistoryProvider`.
+Install only the framework extra you use, for example `python -m pip install "nexamem[agent-framework]==1.0.0"`. Framework packages are not imported by the base package. The integrations provide LangChain typed chat history, AutoGen text memory, Semantic Kernel `ChatHistory` snapshot persistence, and an Agent Framework `HistoryProvider`.
 
 See [integration examples and compatibility limits](INTEGRATIONS.md), including [Microsoft Foundry hosting](INTEGRATIONS.md#microsoft-foundry-hosting). Foundry is a hosting/service integration, not a fifth framework adapter or a replacement for Foundry-managed conversation state.
 

@@ -2,20 +2,11 @@
 
 ## Python Support
 
-NexaMem 1.0 requires Python **3.11+**. The verified `1.0.0rc1` candidate passed CI on CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows; the final stable commit must pass the matrix again. Python 3.8, 3.9, and 3.10 are no longer supported by this checkout. Newer Python versions are not yet certified by the CI matrix.
+NexaMem 1.0 requires Python **3.11+**. The stable `v1.0.0` tag passed CI on CPython 3.11, 3.12, and 3.13 on Linux, macOS, and Windows. Python 3.8, 3.9, and 3.10 are no longer supported. Newer Python versions are not yet certified by the CI matrix.
 
-This checkout prepares `1.0.0`, which is not yet published to PyPI. The `1.0.0rc1` TestPyPI release is already verified; it is not a production PyPI release. See [release status](PROJECT_STATUS.md) for publication evidence and remaining gates. Until stable publication is confirmed, use the source setup below rather than assuming an unpinned PyPI install contains 1.0 features.
+Version `1.0.0` was [published to PyPI](https://pypi.org/project/nexamem/1.0.0/) on 2026-10-29. See [release verification](PROJECT_STATUS.md) for CI, archive digests, clean-install results, and remaining live-service qualification work.
 
 ## Set Up With pip
-
-For the proposed 1.0 release, install from the reviewed source checkout. If you have not already cloned or downloaded the repository:
-
-```shell
-git clone https://github.com/microsoft/nexamem.git
-cd nexamem
-```
-
-Select the reviewed release-preparation branch or commit before installing; the default branch may not yet contain that version. Do not select the stable `v1.0.0` tag until it exists and its publication is verified.
 
 Create an isolated environment using your selected supported interpreter:
 
@@ -36,15 +27,31 @@ Linux/macOS:
 source .venv/bin/activate
 ```
 
-From the repository root after activating the environment:
+After activating the environment:
 
 ```shell
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install "nexamem==1.0.0"
 python -m pip check
 ```
 
 The pip upgrade uses your configured package index. If PowerShell blocks activation, use `.venv\Scripts\python.exe` instead of `python` in subsequent commands; activation is optional.
+
+For a framework integration, use the matching extra, for example `python -m pip install "nexamem[agent-framework]==1.0.0"`. Review [migration and compatibility](LEGACY_API.md) before upgrading persisted data.
+
+## Install From Source
+
+To install the released source in your activated environment:
+
+```shell
+git clone https://github.com/microsoft/nexamem.git
+cd nexamem
+git checkout v1.0.0
+python -m pip install -e .
+python -m pip check
+```
+
+Select a development branch instead when contributing changes. Source framework installations use extras such as `-e ".[agent-framework]"`.
 
 For contributors who also need tests, lint, typing, and packaging tools:
 
@@ -54,17 +61,6 @@ python -m pip check
 ```
 
 Alternatively, `python -m pip install -r requirements-test.txt` installs the same development extra. `requirements.txt` installs the local project. No uv tooling is used.
-
-For the currently published release instead, use `python -m pip install nexamem` in an isolated environment and follow documentation matching the installed version.
-
-After production publication and verification, the stable installation commands will be:
-
-```shell
-python -m pip install "nexamem==1.0.0"
-python -m pip check
-```
-
-Do not run the version-pinned command before publication. For a published framework integration, use the matching extra, for example `python -m pip install "nexamem[agent-framework]==1.0.0"`. Source installations continue to use `-e ".[agent-framework]"`. Review [migration and compatibility](LEGACY_API.md) before upgrading persisted data.
 
 ## Extras
 
@@ -83,7 +79,7 @@ Do not run the version-pinned command before publication. For a published framew
 
 Azure identity, Key Vault, Redis, and fakeredis dependencies remain included in the base package. Do not use the nonexistent `nexamem[azure]` extra.
 
-For optional observability in this checkout, install `python -m pip install -e ".[telemetry]"` or `python -m pip install -e ".[appinsights]"`. Combine extras as needed, for example `python -m pip install -e ".[dev,appinsights]"`. See [observability setup](README.md#observability) for application-owned provider/exporter configuration and privacy limits.
+For optional observability, install `python -m pip install "nexamem[telemetry]==1.0.0"` or `python -m pip install "nexamem[appinsights]==1.0.0"`. Source contributors can combine extras as needed, for example `python -m pip install -e ".[dev,appinsights]"`. See [observability setup](README.md#observability) for application-owned provider/exporter configuration and privacy limits.
 
 ## First Local Run
 
