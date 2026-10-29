@@ -2,45 +2,88 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master, develop]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master, develop]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
-
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-test.txt
-        pip install -e .
-        
-    - name: Verify pytest-asyncio installation
-      run: |
-        python -c "import pytest_asyncio; print(f'pytest-asyncio version: {pytest_asyncio.__version__}')"
-        python -m pytest --version
-        python -m pytest --markers | grep asyncio || echo "asyncio marker not found"
-        
-    - name: Run tests
-      run: |
-        python -m pytest tests/ -v --tb=short --asyncio-mode=auto -p pytest_asyncio
-        
-    - name: Run async-specific tests
-      run: |
-        python -m pytest tests/test_async_verification.py tests/test_ci_async_verification.py -v --asyncio-mode=auto
-        
-    - name: Test import
-      run: |
-        python -c "from nexamem import AIMemory, MemoryScope; print('Import successful')"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run offline unit tests and enforce line coverage
+        run: python -m pytest tests/ -m "not integration" --cov=nexamem --cov-report=xml --cov-report=term-missing --cov-fail-under=90
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-coverage
+          path: coverage.xml
+          if-no-files-found: error
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev]"
+      - name: Lint
+        run: python -m ruff check src/ tests/ build_and_test.py
+      - name: Check formatting
+        run: python -m ruff format --check src/ tests/ build_and_test.py
+      - name: Check public package types
+        run: python -m mypy src/
+
+  build:
+    needs: [test, quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  verify-distributions:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e ".[dev]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Check metadata and clean wheel/source installations
+        run: python build_and_test.py --skip-build

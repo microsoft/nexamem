@@ -13,9 +13,7 @@ class TestMemoryStorage:
         storage = MemoryStorage()
 
         # Store a memory
-        result = storage.store_memory(
-            "test1", "Hello world", {"author": "test"}, "test_scope"
-        )
+        result = storage.store_memory("test1", "Hello world", {"author": "test"}, "test_scope")
         assert result is True
 
         # Retrieve the memory

@@ -1,27 +1,28 @@
 """Dependency injection container for NexaMem."""
 
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from .providers import ServiceProvider
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ServiceRegistry:
     """Registry for managing service providers."""
 
-    def __init__(self):
-        self._providers: Dict[Type, ServiceProvider] = {}
+    def __init__(self) -> None:
+        self._providers: dict[Callable[..., object], ServiceProvider] = {}
 
-    def register(self, service_type: Type, provider: ServiceProvider) -> None:
+    def register(self, service_type: Callable[..., object], provider: ServiceProvider) -> None:
         """Register a service provider for a given type."""
         self._providers[service_type] = provider
 
-    def get_provider(self, service_type: Type) -> Optional[ServiceProvider]:
+    def get_provider(self, service_type: Callable[..., object]) -> ServiceProvider | None:
         """Get the provider for a service type."""
         return self._providers.get(service_type)
 
-    def unregister(self, service_type: Type) -> None:
+    def unregister(self, service_type: Callable[..., object]) -> None:
         """Unregister a service type."""
         if service_type in self._providers:
             del self._providers[service_type]
@@ -30,7 +31,7 @@ class ServiceRegistry:
         """Clear all registered providers."""
         self._providers.clear()
 
-    def list_registered_types(self) -> List[Type]:
+    def list_registered_types(self) -> list[Callable[..., object]]:
         """Get a list of all registered service types."""
         return list(self._providers.keys())
 
@@ -38,30 +39,30 @@ class ServiceRegistry:
 class DIContainer:
     """Dependency injection container."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._registry = ServiceRegistry()
-        self._config: Dict[str, Any] = {}
+        self._config: dict[str, Any] = {}
 
     @property
     def registry(self) -> ServiceRegistry:
         """Get the service registry."""
         return self._registry
 
-    def set_config(self, config: Dict[str, Any]) -> None:
+    def set_config(self, config: dict[str, Any]) -> None:
         """Set the global configuration."""
         self._config = config
 
-    def get_config(self, key: Optional[str] = None) -> Any:
+    def get_config(self, key: str | None = None) -> Any:
         """Get configuration value(s)."""
         if key is None:
             return self._config
         return self._config.get(key)
 
-    def register(self, service_type: Type, provider: ServiceProvider) -> None:
+    def register(self, service_type: Callable[..., object], provider: ServiceProvider) -> None:
         """Register a service with its provider."""
         self._registry.register(service_type, provider)
 
-    def resolve(self, service_type: Type[T], config: Optional[Dict[str, Any]] = None) -> T:
+    def resolve(self, service_type: Callable[..., T], config: dict[str, Any] | None = None) -> T:
         """Resolve a service instance."""
         provider = self._registry.get_provider(service_type)
         if provider is None:
@@ -74,19 +75,21 @@ class DIContainer:
 
         return provider.provide(service_type, merged_config if merged_config else None)
 
-    def try_resolve(self, service_type: Type[T], config: Optional[Dict[str, Any]] = None) -> Optional[T]:
+    def try_resolve(
+        self, service_type: Callable[..., T], config: dict[str, Any] | None = None
+    ) -> T | None:
         """Try to resolve a service instance, returning None if not possible."""
         try:
             return self.resolve(service_type, config)
         except (ValueError, TypeError, AttributeError):
             return None
 
-    def is_registered(self, service_type: Type) -> bool:
+    def is_registered(self, service_type: Callable[..., object]) -> bool:
         """Check if a service type is registered."""
         provider = self._registry.get_provider(service_type)
         return provider is not None and provider.can_provide(service_type)
 
-    def build_scope(self) -> 'DIContainer':
+    def build_scope(self) -> "DIContainer":
         """Create a new scoped container that inherits from this one."""
         scoped_container = DIContainer()
         scoped_container._config = self._config.copy()

@@ -5,7 +5,7 @@ Provides both synchronous and asynchronous interfaces for maximum flexibility.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class BaseStorage(ABC):
@@ -16,29 +16,29 @@ class BaseStorage(ABC):
         self,
         memory_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        scope: Optional[str] = None
+        metadata: dict[str, Any] | None = None,
+        scope: str | None = None,
     ) -> bool:
         """Store a memory with the given ID and content.
-        
+
         Args:
             memory_id: Unique identifier for the memory
             content: The memory content to store
             metadata: Optional metadata associated with the memory
             scope: Optional scope to group memories
-            
+
         Returns:
             True if successful, False otherwise
         """
         pass
 
     @abstractmethod
-    def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    def retrieve_memory(self, memory_id: str) -> dict[str, Any] | None:
         """Retrieve a memory by its ID.
-        
+
         Args:
             memory_id: The unique identifier of the memory
-            
+
         Returns:
             Dictionary containing memory data if found, None otherwise
         """
@@ -47,27 +47,23 @@ class BaseStorage(ABC):
     @abstractmethod
     def delete_memory(self, memory_id: str) -> bool:
         """Delete a memory by its ID.
-        
+
         Args:
             memory_id: The unique identifier of the memory
-            
+
         Returns:
             True if deleted successfully, False otherwise
         """
         pass
 
     @abstractmethod
-    def list_memories(
-        self, 
-        scope: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[str]:
+    def list_memories(self, scope: str | None = None, limit: int | None = None) -> list[str]:
         """List memory IDs, optionally filtered by scope.
-        
+
         Args:
             scope: Optional scope to filter by
             limit: Optional limit on number of results
-            
+
         Returns:
             List of memory IDs
         """
@@ -75,18 +71,15 @@ class BaseStorage(ABC):
 
     @abstractmethod
     def search_memories(
-        self, 
-        query: str, 
-        scope: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[str]:
+        self, query: str, scope: str | None = None, limit: int | None = None
+    ) -> list[str]:
         """Search memories by content.
-        
+
         Args:
             query: Search query string
             scope: Optional scope to search within
             limit: Optional limit on number of results
-            
+
         Returns:
             List of matching memory IDs
         """
@@ -94,25 +87,23 @@ class BaseStorage(ABC):
 
     @abstractmethod
     def get_audit_log(
-        self, 
-        memory_id: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, memory_id: str | None = None, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """Get audit log entries.
-        
+
         Args:
             memory_id: Optional memory ID to filter by
             limit: Optional limit on number of entries
-            
+
         Returns:
             List of audit log entries
         """
         pass
 
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get storage statistics.
-        
+
         Returns:
             Dictionary containing storage statistics
         """
@@ -127,29 +118,29 @@ class BaseAsyncStorage(ABC):
         self,
         memory_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        scope: Optional[str] = None
+        metadata: dict[str, Any] | None = None,
+        scope: str | None = None,
     ) -> bool:
         """Store a memory with the given ID and content (async).
-        
+
         Args:
             memory_id: Unique identifier for the memory
             content: The memory content to store
             metadata: Optional metadata associated with the memory
             scope: Optional scope to group memories
-            
+
         Returns:
             True if successful, False otherwise
         """
         pass
 
     @abstractmethod
-    async def retrieve_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    async def retrieve_memory(self, memory_id: str) -> dict[str, Any] | None:
         """Retrieve a memory by its ID (async).
-        
+
         Args:
             memory_id: The unique identifier of the memory
-            
+
         Returns:
             Dictionary containing memory data if found, None otherwise
         """
@@ -158,27 +149,23 @@ class BaseAsyncStorage(ABC):
     @abstractmethod
     async def delete_memory(self, memory_id: str) -> bool:
         """Delete a memory by its ID (async).
-        
+
         Args:
             memory_id: The unique identifier of the memory
-            
+
         Returns:
             True if deleted successfully, False otherwise
         """
         pass
 
     @abstractmethod
-    async def list_memories(
-        self, 
-        scope: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[str]:
+    async def list_memories(self, scope: str | None = None, limit: int | None = None) -> list[str]:
         """List memory IDs, optionally filtered by scope (async).
-        
+
         Args:
             scope: Optional scope to filter by
             limit: Optional limit on number of results
-            
+
         Returns:
             List of memory IDs
         """
@@ -186,18 +173,15 @@ class BaseAsyncStorage(ABC):
 
     @abstractmethod
     async def search_memories(
-        self, 
-        query: str, 
-        scope: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[str]:
+        self, query: str, scope: str | None = None, limit: int | None = None
+    ) -> list[str]:
         """Search memories by content (async).
-        
+
         Args:
             query: Search query string
             scope: Optional scope to search within
             limit: Optional limit on number of results
-            
+
         Returns:
             List of matching memory IDs
         """
@@ -205,25 +189,23 @@ class BaseAsyncStorage(ABC):
 
     @abstractmethod
     async def get_audit_log(
-        self, 
-        memory_id: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, memory_id: str | None = None, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """Get audit log entries (async).
-        
+
         Args:
             memory_id: Optional memory ID to filter by
             limit: Optional limit on number of entries
-            
+
         Returns:
             List of audit log entries
         """
         pass
 
     @abstractmethod
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Get storage statistics (async).
-        
+
         Returns:
             Dictionary containing storage statistics
         """

@@ -1,469 +1,168 @@
-# NexaMem / AIMemory
+# NexaMem
 
-A Python library providing governed, Redis-backed conversational memory for AI components. Designed for easy integration with AI agents, orchestrators, and chatbot systems.
-
-[![Tests](https://github.com/microsoft/nexamem/workflows/Tests/badge.svg)](https://github.com/microsoft/nexamem/actions/workflows/tests.yml)
-[![Publish](https://github.com/microsoft/nexamem/workflows/Publish%20Python%20🐍%20distribution%20📦%20to%20PyPI%20and%20TestPyPI/badge.svg)](https://github.com/microsoft/nexamem/actions/workflows/python-publish-to-test.yml)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![CI](https://github.com/microsoft/nexamem/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/nexamem/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## 📖 Quick Navigation
+NexaMem is an Azure-focused Python storage library for chatbot history and application-managed AI memory. Keep messages, conversation summaries, user preferences, and workflow notes as text records with metadata, then retrieve, search, and delete them through a consistent API.
 
-**New to NexaMem?** → [Quick Start - AIMemory](#quick-start---aimemory-recommended)  
-**Want Azure Redis?** → [Azure Redis Ready](#-azure-redis-ready) | [Production Configuration](#production-with-azure-redis)  
-**YAML Channels?** → [Channel Configuration](#channel-configuration-channelsyaml) | [Schema Validation](#-yaml-schema-validation)  
-**Need Help?** → [Azure Redis Integration Guide](AZURE_REDIS.md) | [Migration Guide](LEGACY_API.md)  
-**Testing & Development?** → [Testing & Development](#-testing--development)
+The shared-service implementation targets Azure Cache for Redis, with Azure identity and Key Vault configuration support. Start with in-memory storage for experiments or JSON files and SQLite for local persistence without an Azure account. Change the storage configuration without rewriting calls to the memory API.
 
-## Features
+## Why NexaMem?
 
-### AIMemory API (Recommended) - v0.3
-- **Redis-backed channels** with user-defined configuration
-- **Sync and async client classes** for high-performance applications  
-- **YAML channel configuration** with TTL, encryption, and quota settings
-- **Policy enforcement** for TTL, PII detection, and quota management
-- **Scope-based access control** with environment isolation
-- **Dynamic channel registration** for runtime flexibility
-- **Checkpoint operations** for workflow state management
-- **Content processing chain** with PII detection/redaction
-- **Audit logging** to Redis Stream for compliance
-- **Base metrics capturing** for monitoring and observability
-- **Azure Redis integration** with enterprise security and performance
+- **One API across storage backends.** Store, retrieve, list, search, and delete text records without writing a separate persistence layer for each backend.
+- **Context organized around your application.** Attach metadata and group records by conversation, user, or task using caller-defined scopes. Scopes organize data; they are not access controls.
+- **Sync and async interfaces.** Use the interface that fits your application. Local async adapters still perform synchronous I/O; they are not nonblocking storage engines.
+- **Optional observability.** Correlate memory operations with OpenTelemetry traces and metrics, including application-configured Azure Monitor/Application Insights export.
 
-## Installation
+## Typical Uses
 
-```sh
-pip install nexamem
+- **Chatbots:** persist conversation messages and retrieve history when assembling the next prompt.
+- **Personal assistants:** save explicitly captured preferences and application-generated summaries for later conversations.
+- **Agent workflows:** retain task notes and intermediate text results so subsequent steps can retrieve them by ID or search within a scope.
 
-# Development/testing
-pip install -i https://test.pypi.org/simple/ nexamem
+Your application decides what to remember and what to include in a model's context. NexaMem supplies storage and text-based search, not automatic memory extraction, embeddings, or semantic retrieval.
+
+> [!IMPORTANT]
+> This checkout is preparing an unreleased 1.0.0 stability release. Package metadata is still `0.4.2`; do not publish rebuilt artifacts under that existing version. See [release status](PROJECT_STATUS.md) and [unreleased changes](CHANGELOG.md).
+
+## Install
+
+This checkout requires Python 3.11 or newer. CI targets Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. Published older versions may have different requirements.
+
+```shell
+python -m pip install nexamem
 ```
 
-### Or from GitHub
+Published packages do not contain this checkout's unreleased fixes. For the stabilization code, create and activate a virtual environment using the platform-specific steps in [installation](INSTALLATION.md), then run from the repository root:
 
-```sh
-pip install git+https://github.com/microsoft/nexamem.git
-uv add git+https://github.com/microsoft/nexamem.git  
+```shell
+python -m pip install -e .
 ```
 
-## 🔥 Azure Redis Ready
+Contributors can install `python -m pip install -e ".[dev]"` instead to add test and development tools. No uv installation or commands are required. The local quick starts below need no Azure account, credentials, YAML configuration, or telemetry setup.
 
-NexaMem includes **first-class support for Azure Cache for Redis** with enterprise security features:
-
-- **🚀 Quick Setup**: Connect with just hostname + access key  
-- **🔐 Enterprise Auth**: Full Azure Entra ID (Azure AD) integration
-- **⚡ High Performance**: Sub-millisecond latency, automatic scaling
-- **🛡️ Security**: VNet integration, encryption at rest/transit, compliance-ready
-- **📊 Advanced Querying**: Pattern-based message search and analytics
-
-**Ready to use Azure Redis?** See our [Quick Start with Azure Redis](#quick-start-with-azure-redis) section below or check the comprehensive [Azure Redis Integration Guide](AZURE_REDIS.md) for advanced configurations.
-
-## Quick Start - AIMemory (Recommended)
-
-The new AIMemory API provides enterprise-grade conversational memory with Redis backing and full YAML channel configuration support:
-
-```python
-from nexamem import AIMemory, AIMemoryConfig, StorageConfig, MemoryScope
-
-# Initialize with in-memory storage for testing (or Redis for production)
-config = AIMemoryConfig(
-    default_scope="test_session",
-    storage=StorageConfig.memory(),  # For testing, use Redis for production
-    channels_yaml="channels.yaml",  # Optional: YAML channel configuration
-    strict_yaml_validation=True     # Optional: Enable strict YAML validation
-)
-memory = AIMemory(config)
-
-# Create a memory scope (defines access control)
-scope = MemoryScope(
-    agent_id="investment_agent",
-    user_id="user_12345",
-    session_id="session_abc123",
-    env="prod"  # Environment isolation
-)
-
-# Write to a channel
-message_uuid = memory.write(
-    scope=scope,
-    channel="working",
-    content="User asked about portfolio diversification",
-    auto_pii=True  # Auto-detect PII
-)
-
-# Read from a channel
-messages, metadata = memory.read(
-    scope=scope,
-    channel="working",
-    max_msgs=10,
-    since_sec=3600  # Last hour only
-)
-
-print(f"Retrieved {len(messages)} messages")
-
-# Validate configuration (optional but recommended)
-from nexamem.channels import validate_yaml_schema
-
-try:
-    validate_yaml_schema("channels.yaml")
-    print("✅ Channel configuration is valid!")
-except Exception as e:
-    print(f"❌ Configuration error: {e}")
-```
-
-### Production with Azure Redis
-
-For production applications, use Azure Cache for Redis with the new AIMemory API:
+## Quick Start
 
 ```python
 from nexamem import AIMemory, AIMemoryConfig, StorageConfig
 
-# Production configuration with Azure Redis
-config = AIMemoryConfig(
-    default_scope="production_session",
-    storage=StorageConfig.azure_redis(
-        hostname="your-cache.redis.cache.windows.net",
-        access_key="your_primary_access_key",
-        port=6380,
-        ssl=True
-    ),
-    channels_yaml="channels.yaml",
-    strict_yaml_validation=True
-)
-
-memory = AIMemory(config)
-
-# Use the same write/read operations as before
-scope = MemoryScope(
-    agent_id="prod_agent",
-    user_id="customer_12345",
-    session_id="session_abc123",
-    env="prod"
-)
-
-message_uuid = memory.write(
-    scope=scope,
-    channel="working",
-    content="Production message with Azure Redis backing",
-    auto_pii=True
-)
-
-messages, metadata = memory.read(scope=scope, channel="working")
-print(f"Retrieved {len(messages)} messages from Azure Redis")
-```
-
-> **💡 Pro Tip**: AIMemory includes strict YAML schema validation by default to catch configuration errors early. See the [Schema Validation](#-yaml-schema-validation) section for details.
-
-### Channel Configuration (channels.yaml)
-
-AIMemory uses **strict YAML schema validation** to ensure configuration integrity and security. Each channel must follow specific rules and constraints.
-
-#### Schema Requirements
-
-**Channel Names:**
-- Must be `snake_case`: start with lowercase letter, followed by letters/numbers/underscores
-- Maximum 50 characters
-- Cannot use reserved names: `admin`, `system`, `internal`, `redis`, `audit`
-- Pattern: `^[a-z][a-z0-9_]*$`
-
-**Required Fields:**
-- `ttl_sec`: Time-to-live in seconds (60 to 604,800 = 1 minute to 7 days)
-
-**Optional Fields:**
-- `encrypt`: Boolean (default: `false`) - enables client-side encryption
-- `quota_bytes`: Integer (1 to 1,000,000,000) - daily quota per (agent, user, channel)
-
-#### Valid Configuration Example
-
-```yaml
-channels:
-  working:              # ✅ Valid: snake_case name
-    ttl_sec: 14400      # ✅ Valid: 4 hours (within 1 min - 7 days range)
-    encrypt: true       # ✅ Valid: boolean value
-    quota_bytes: 1000000 # ✅ Valid: 1MB daily quota
-
-  procedure:            # ✅ Valid: workflow checkpoints
-    ttl_sec: 604800     # ✅ Valid: 7 days (maximum allowed)
-    encrypt: true       # ✅ Valid: encryption for sensitive workflows
-
-  routing:              # ✅ Valid: classification hints
-    ttl_sec: 86400      # ✅ Valid: 24 hours
-    encrypt: false      # ✅ Valid: no encryption needed for routing
-```
-
-#### Schema Validation Control
-
-```python
-# Strict validation (default - recommended)
 memory = AIMemory(
-    channels_yaml="channels.yaml",
-    strict_yaml_validation=True  # Default
+    AIMemoryConfig(default_scope="conversation-42", storage=StorageConfig.memory())
 )
-
-# Backward compatibility mode (legacy configurations)
-memory = AIMemory(
-    channels_yaml="legacy_channels.yaml",
-    strict_yaml_validation=False
-)
-
-# Standalone validation
-from nexamem.channels import validate_yaml_schema, YamlSchemaError
-
-try:
-    validate_yaml_schema("channels.yaml")
-    print("✅ Configuration is valid!")
-except YamlSchemaError as e:
-    print(f"❌ Validation failed: {e}")
+memory_id = memory.store("The customer prefers email.", metadata={"source": "chat"})
+record = memory.retrieve(memory_id)
+assert record is not None
+assert record["content"] == "The customer prefers email."
+assert memory.search("email") == [memory_id]
+assert memory.delete(memory_id)
 ```
 
-## 🔐 YAML Schema Validation
+Use `StorageConfig.file("./memory-data")` or `StorageConfig.sqlite("./memory.db")` for local persistence. Reads return a record containing `id`, `content`, `metadata`, `scope`, and timestamps, or `None` when absent.
 
-AIMemory enforces **strict schema validation** to prevent configuration errors and ensure security compliance.
-
-### Validation Features
-
-- **Channel Name Validation**: Enforces `snake_case` naming conventions
-- **Field Type Checking**: Validates data types for all configuration fields  
-- **Range Validation**: Ensures TTL and quota values are within safe limits
-- **Security Enforcement**: Blocks reserved names and unknown fields
-- **Clear Error Messages**: Provides specific, actionable error descriptions
-
-### Validation Modes
-
-```python
-# Strict validation (recommended for production)
-memory = AIMemory(
-    channels_yaml="channels.yaml",
-    strict_yaml_validation=True  # Default
-)
-
-# Legacy mode (for backward compatibility)
-memory = AIMemory(
-    channels_yaml="legacy_channels.yaml", 
-    strict_yaml_validation=False
-)
-```
-
-### Schema Validation Tools
-
-```python
-from nexamem.channels import validate_yaml_schema, generate_yaml_schema_docs
-
-# Validate configuration file
-try:
-    validate_yaml_schema("channels.yaml")
-    print("✅ Configuration is valid")
-except YamlSchemaError as e:
-    print(f"❌ Validation failed: {e}")
-
-# Generate schema documentation
-print(generate_yaml_schema_docs())
-```
-
-### Common Validation Errors
-
-| Error Type | Example | Fix |
-|------------|---------|-----|
-| Invalid Name | `Invalid-Channel` | Use `invalid_channel` |
-| TTL Range | `ttl_sec: 999999` | Use value ≤ 604800 (7 days) |
-| Reserved Name | `admin:` | Use `admin_channel` or similar |
-| Unknown Field | `custom_field: value` | Remove or use allowed fields |
-| Wrong Type | `encrypt: "yes"` | Use `encrypt: true` |
-
-#### Common Validation Errors
-
-```yaml
-# ❌ INVALID Examples:
-channels:
-  Invalid-Name:         # ❌ Hyphens not allowed
-  user_123:            # ❌ Cannot start with number
-  admin:               # ❌ Reserved name
-  working:
-    ttl_sec: 999999    # ❌ Exceeds 7 days (604,800 seconds)
-    encrypt: "yes"     # ❌ Must be boolean (true/false)
-    quota_bytes: -100  # ❌ Must be positive
-    unknown_field: 1   # ❌ Unknown field not allowed
-```
-
-For detailed schema documentation, see [YAML_SCHEMA_VALIDATION.md](YAML_SCHEMA_VALIDATION.md).
-
-### Enhanced Features
-
-```python
-# Dynamic channel registration
-memory.register_channel(
-    name="debug_logs",
-    ttl_sec=3600,      # 1 hour
-    encrypt=False,
-    quota_bytes=500000  # 500KB
-)
-
-# Checkpoint operations for workflow state
-memory.checkpoint(scope, "workflow_state", {
-    "current_step": "risk_assessment",
-    "completed_steps": ["onboarding", "kyc"],
-    "progress": 0.6
-})
-
-# Atomic updates
-def advance_step(current_state):
-    return {"step": current_state["step"] + 1}
-
-updated = memory.checkpoint_atomic(scope, "counter", advance_step)
-
-# Metrics and audit
-metrics_data = memory.metrics.get_all_metrics()
-audit_records = memory.audit.get_audit_records(count=10)
-```
-
-### Policy Enforcement
-
-AIMemory automatically enforces policies:
-
-```python
-# PII protection - fails if PII sent to non-encrypted channel
-try:
-    memory.write(
-        scope=scope,
-        channel="routing",  # encrypt=false
-        content="Customer SSN: 123-45-6789",
-        pii=True
-    )
-except EncryptionRequired:
-    print("PII blocked from non-encrypted channel")
-
-# Quota enforcement
-try:
-    large_content = "x" * 2000000  # 2MB
-    memory.write(scope=scope, channel="working", content=large_content)
-except QuotaExceeded:
-    print("Daily quota exceeded")
-
-# TTL validation
-try:
-    memory.write(
-        scope=scope,
-        channel="working",
-        content="Test",
-        ttl_override=999999  # Exceeds channel limit
-    )
-except TTLViolation:
-    print("TTL override exceeds channel limit")
-```
-
-### Dynamic Channel Management
-
-Register channels at runtime:
-
-```python
-# Register new channel
-memory.register_channel(
-    name="debug_logs",
-    ttl_sec=3600,      # 1 hour
-    encrypt=False,
-    quota_bytes=500000  # 500KB
-)
-
-# List all channels
-channels = memory.list_channels()
-for name, config in channels.items():
-    print(f"{name}: TTL={config.ttl_sec}s, Encrypt={config.encrypt}")
-```
-
-### Checkpoint Operations
-
-Manage workflow state:
-
-```python
-# Set checkpoint
-memory.checkpoint(scope, "workflow_state", {
-    "current_step": "risk_assessment",
-    "completed_steps": ["onboarding", "kyc"],
-    "progress": 0.6
-})
-
-# Atomic update
-def advance_step(current_state):
-    if current_state is None:
-        return {"step": 1}
-    return {"step": current_state["step"] + 1}
-
-updated = memory.checkpoint_atomic(scope, "counter", advance_step)
-print(f"Step: {updated['step']}")
-```
-
-### Async API
-
-For high-throughput applications:
+### Async
 
 ```python
 import asyncio
 from nexamem import AsyncAIMemory, AIMemoryConfig, StorageConfig
 
 async def main():
-    config = AIMemoryConfig(
-        default_scope="async_session",
-        storage=StorageConfig.memory(),  # For testing, use Redis for production
-        channels_yaml="channels.yaml"   # Optional: YAML channel configuration
+    memory = AsyncAIMemory(
+        AIMemoryConfig(default_scope="conversation-42", storage=StorageConfig.memory())
     )
-    
-    async_memory = AsyncAIMemory(config)
-    
-    scope = MemoryScope(
-        agent_id="async_agent",
-        user_id="user_456"
-    )
-    
-    # Async operations
-    message_uuid = await async_memory.write(
-        scope=scope,
-        channel="working", 
-        content="Async message"
-    )
-    
-    messages, metadata = await async_memory.read(
-        scope=scope,
-        channel="working"
-    )
-    
-    await async_memory.close()  # Important!
+    memory_id = await memory.store("Remember this preference.")
+    record = await memory.retrieve(memory_id)
+    assert record is not None
+    assert record["content"] == "Remember this preference."
+    assert await memory.delete(memory_id)
 
 asyncio.run(main())
 ```
 
-## 🧪 Testing & Development
+The local async adapters delegate to synchronous storage; they do not make file or SQLite operations nonblocking.
 
-### Running Tests
+### Backends
 
-NexaMem includes a comprehensive test suite covering all major functionality. Tests are organized to provide both unit and integration coverage.
+| Backend | Configuration | Notes |
+| --- | --- | --- |
+| Memory | `StorageConfig.memory()` | Process-local, not persistent |
+| File | `StorageConfig.file("./memory-data")` | JSON records and indexes; individual record writes are atomic, not multi-file transactions |
+| SQLite | `StorageConfig.sqlite("./memory.db")` | Persistent local database; no external service required |
+| Azure Redis | `StorageConfig.azure_redis(AzureRedisConfig(...))` | Requires a separately configured service; see [Azure setup](INSTALLATION.md#azure-cache-for-redis) and [limitations](NEW_ARCHITECTURE.md#azure-redis-configuration) |
 
-#### Prerequisites
+Redis, fakeredis, PyYAML, and Azure identity/Key Vault clients remain runtime dependencies for compatibility. There is no `azure` extra. Optional observability extras are `telemetry` and `appinsights`; development extras are `dev`, `docs`, `perf`, and `all`.
 
-Make sure you're using the project's virtual environment:
+## Observability
 
-```bash
-# On Windows (recommended)
-.venv/Scripts/python.exe -m pytest
+Observability is optional. The `telemetry` extra installs the OpenTelemetry API; your application supplies its SDK, providers, sampling, exporters, and shutdown/flush lifecycle. Without the API, operations run normally. With the API but no configured providers, telemetry is a no-op. NexaMem never configures global providers or starts an exporter itself.
 
-# Or activate the virtual environment first
-.venv\Scripts\activate
-python -m pytest
+For generic OpenTelemetry support in this unreleased checkout:
 
-# On Unix/Linux/macOS
-source .venv/bin/activate
-python -m pytest
+```shell
+python -m pip install -e ".[telemetry]"
 ```
 
-### Legacy ChatHistory API (Deprecated)
+For Azure Monitor/Application Insights, the `appinsights` extra also installs the Azure Monitor OpenTelemetry distribution:
 
-> ⚠️ **Note**: The legacy ChatHistory API is deprecated and will be removed in a future version. Please migrate to the new [AIMemory API](#quick-start---aimemory-recommended) for new projects.
-
-For existing applications still using the legacy API, see [LEGACY_API.md](LEGACY_API.md) for documentation and migration guidance.
-
-# On Unix/Linux/macOS
-source .venv/bin/activate
-python -m pytest
+```shell
+python -m pip install -e ".[appinsights]"
 ```
 
-## License
+Set `APPLICATIONINSIGHTS_CONNECTION_STRING` in the application's environment. Configure Azure Monitor once at application startup, before using NexaMem; do not initialize a second pipeline if your host already provides one. For Azure-hosted production applications, prefer managed identity with the required Application Insights permissions:
 
-This project is licensed under the MIT License.
+```python
+from azure.identity import DefaultAzureCredential
+from azure.monitor.opentelemetry import configure_azure_monitor
+
+configure_azure_monitor(
+    credential=DefaultAzureCredential(),
+    logger_name="my_application",
+    enable_live_metrics=False,
+)
+
+from nexamem import AIMemory, AIMemoryConfig, StorageConfig
+
+memory = AIMemory(AIMemoryConfig(storage=StorageConfig.memory()))
+memory.store("The customer prefers email.")
+```
+
+See the [Azure Monitor Python configuration reference](https://learn.microsoft.com/python/api/overview/azure/monitor-opentelemetry-readme?view=azure-python) and [Microsoft Entra authentication requirements](https://learn.microsoft.com/azure/azure-monitor/app/azure-ad-authentication).
+
+The public `AIMemory` and `AsyncAIMemory` data operations, including compatibility `write()`/`read()`, emit `nexamem.<operation>` spans under instrumentation scope `nexamem`, an operation counter (`nexamem.operations`), and a duration histogram in seconds (`nexamem.operation.duration`). Spans retain the caller's active context across sync calls and awaits; independently instrumented backend calls can become child spans. Counter and duration attributes contain only the operation name and success/error outcome. Exceptions and cancellations propagate unchanged; spans record only their exception class, not messages or stack traces. Missing records and unsuccessful boolean results are normal results, not exceptions.
+
+NexaMem's instrumentation does not capture content, metadata, search queries, record IDs, scopes, user/session IDs, or credentials. Review your application's other instrumentations and logging separately: their data collection is outside this guarantee. No trace context is automatically stored with memories or passed between agents/processes. The retained legacy facades and standalone storage APIs are not instrumented by this integration; the legacy in-process metrics collector remains separate.
+
+## Channels and Guarantees
+
+`AIMemory` and `AsyncAIMemory` retain `write()`/`read()` channel compatibility methods. Configure channels through [YAML](YAML_SCHEMA_VALIDATION.md) or `register_channel()`. Channel scopes include environment, agent, user, session, and channel; UTF-8 bytes are decoded on write.
+
+> [!WARNING]
+> Scope names are logical namespaces, not authorization. The new facade records TTL, quota, encryption, and PII options but does not enforce those policies or implement client-side encryption. Compatibility `read()` enforces `max_msgs`, not `since_sec`, `max_bytes`, or `max_tokens`. Enforce security and retention requirements in the application and backing service.
+
+Policy/content-processing helpers and the retained Redis-oriented legacy facade are separate APIs. Do not assume their behavior applies automatically to the new facade. See [compatibility and migration](LEGACY_API.md) and [security limitations](SECURITY.md).
+
+## Development
+
+```shell
+python -m pip install -e ".[dev]"
+python -m pytest tests/ -m "not integration" --cov=nexamem --cov-report=term-missing --cov-fail-under=90
+python -m ruff check src/ tests/ build_and_test.py
+python -m ruff format --check src/ tests/ build_and_test.py
+python -m mypy src/
+python build_and_test.py --dist-dir dist-release
+```
+
+The line-coverage gate covers the complete package, including retained legacy modules. Tests use local backends, fakeredis, and mocked Azure identity; passing unit tests is not live Azure certification. Strict mypy passes across the complete package and remains a blocking gate.
+
+## Documentation
+
+- [Installation and dependency policy](INSTALLATION.md)
+- [Architecture and backend limitations](NEW_ARCHITECTURE.md)
+- [Legacy API and data migration](LEGACY_API.md)
+- [Channel YAML validation](YAML_SCHEMA_VALIDATION.md)
+- [Async testing](ASYNC_TESTING.md)
+- [Contributor and release workflow](CONTRIBUTING.md)
+- [Release status](PROJECT_STATUS.md)
+- [Security reporting](SECURITY.md)
+
+Licensed under the [MIT License](LICENSE).

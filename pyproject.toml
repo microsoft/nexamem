@@ -1,36 +1,35 @@
 [build-system]
-requires = ["setuptools>=61.0", "build"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexamem"
 version = "0.4.2"
-description = "NexaMem/AIMemory - Complete enterprise-grade Redis-backed conversational memory with built-in governance, Azure integration, content processing, and audit capabilities. Everything included - no extras needed!"
+description = "Azure-focused conversational memory storage with sync/async APIs, local backends, and optional OpenTelemetry."
 authors = [
     { name="Chad Adams", email="chadada@microsoft.com" }
 ]
 maintainers = [
     { name="Chad Adams", email="chadada@microsoft.com" }
 ]
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
     # Core dependencies
-    "pydantic>=2.0,<3.0",
+    "pydantic>=2.14.1,<3.0",
     
     # Redis dependencies (with async support)
-    "redis>=5.0.0,<6.0",
-    # Pin fakeredis to 2.21.0 for Python 3.8 compatibility
-    # (newer versions use type annotations incompatible with Python 3.8)
-    "fakeredis==2.21.0",
+    "redis>=8.1.0,<9.0",
+    "fakeredis>=2.40.0,<3.0",
     
     # YAML configuration support
-    "PyYAML>=6.0,<7.0",
+    "PyYAML>=6.0.3,<7.0",
     
     # Azure identity for Entra ID authentication
-    "azure-identity>=1.15.0,<2.0",
-    "azure-keyvault-secrets>=4.7.0,<5.0",
+    "azure-identity>=1.27.0,<2.0",
+    "azure-keyvault-secrets>=4.12.0,<5.0",
 ]
 keywords = [
     "aimemory", "nexamem", "chatbot", "conversation", "memory", "llm", "ai", 
@@ -46,13 +45,9 @@ classifiers = [
     "Topic :: Database :: Database Engines/Servers",
     "Topic :: System :: Logging",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
@@ -60,28 +55,40 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+telemetry = [
+    "opentelemetry-api>=1.45.1,<2.0",
+]
+appinsights = [
+    "nexamem[telemetry]",
+    "azure-monitor-opentelemetry>=1.8.11,<2.0",
+]
+
 # Development and testing dependencies  
 dev = [
-    "pytest>=7.0.0,<9.0",
-    "pytest-asyncio>=0.21.0,<2.0",
-    "pytest-cov>=4.0.0,<7.0",
-    "black>=23.0.0,<25.0",
-    "mypy>=1.0.0,<2.0",
-    "ruff>=0.1.0,<1.0",
-    "pre-commit>=3.0.0,<4.0"
+    "pytest>=9.1.1,<10.0",
+    "pytest-asyncio>=1.4.0,<2.0",
+    "pytest-cov>=7.1.0,<8.0",
+    "mypy>=2.4.0,<3.0",
+    "ruff>=0.17.3,<1.0",
+    "pre-commit>=4.7.0,<5.0",
+    "pip-tools>=7.6.2,<8.0",
+    "build>=1.6.1,<2.0",
+    "twine>=7.0.0,<8.0",
+    "types-PyYAML",
+    "opentelemetry-sdk>=1.45.1,<2.0",
 ]
 
 # Documentation dependencies
 docs = [
-    "mkdocs>=1.5.0,<2.0",
-    "mkdocs-material>=9.0.0,<10.0",
-    "mkdocstrings[python]>=0.20.0,<1.0"
+    "mkdocs>=1.6.1,<2.0",
+    "mkdocs-material>=9.7.7,<10.0",
+    "mkdocstrings[python]>=1.0.8,<2.0"
 ]
 
 # Performance testing
 perf = [
-    "pytest-benchmark>=4.0.0,<5.0",
-    "memory-profiler>=0.60.0,<1.0"
+    "pytest-benchmark>=5.3.0,<6.0",
+    "memory-profiler>=0.61.0,<1.0"
 ]
 
 # All optional dependencies (dev tools only)
@@ -106,27 +113,12 @@ include = ["nexamem*"]
 [tool.setuptools.package-data]
 nexamem = ["*.yaml", "*.yml", "py.typed"]
 
-# Black code formatting
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-    \.eggs
-  | \.git
-  | \.mypy_cache
-  | \.pytest_cache
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
 # Ruff linting
 [tool.ruff]
-target-version = "py38"
+target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -140,19 +132,20 @@ select = [
     "TCH", # flake8-type-checking
 ]
 ignore = [
-    "E501",  # line too long, handled by black
+    "E501",  # line too long, handled by Ruff format
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
     "ARG002", # unused method argument
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["ARG", "SIM"]
+"src/nexamem/config/storage.py" = ["UP042"]
 
 # MyPy type checking
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.11"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
@@ -175,16 +168,14 @@ ignore_missing_imports = true
 
 # Pytest configuration
 [tool.pytest.ini_options]
-minversion = "7.0"
+minversion = "9.1"
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=nexamem",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
+    "--import-mode=importlib",
 ]
 testpaths = ["tests"]
+pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -192,49 +183,13 @@ markers = [
     "azure: marks tests that require Azure services",
 ]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 # Coverage configuration
 [tool.coverage.run]
 source = ["src/nexamem"]
-omit = [
-    "*/tests/*",
-    "*/test_*",
-    "*/__pycache__/*",
-    "*/.*",
-]
 
 [tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
-    "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
-    "@(abc\\.)?abstractmethod",
-]
-
-# UV package manager configuration
-[tool.uv]
-# Updated development dependencies (matches project.optional-dependencies.dev)
-dev-dependencies = [
-    "pytest>=7.0.0,<9.0",
-    "pytest-asyncio>=0.23.0,<2.0",
-    "pytest-cov>=4.0.0,<7.0",
-    "black>=23.0.0,<25.0",
-    "mypy>=1.0.0,<2.0",
-    "ruff>=0.1.0,<1.0",
-    "pre-commit>=3.0.0,<4.0"
-]
-
-# Constraint dependencies for consistent resolution
-constraint-dependencies = [
-    "fakeredis==2.21.0"  # Pin for Python 3.8 compatibility
-]
-
-# UV workspace configuration - removed examples since it doesn't have pyproject.toml
-[tool.uv.workspace]
-members = ["."]
+fail_under = 90
+precision = 2
+exclude_lines = ["pragma: no cover"]

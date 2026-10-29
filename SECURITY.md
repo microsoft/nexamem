@@ -39,3 +39,17 @@ We prefer all communications to be in English.
 Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https://aka.ms/security.md/cvd).
 
 <!-- END MICROSOFT SECURITY.MD BLOCK -->
+
+## NexaMem Security Boundaries
+
+Scope names and environment prefixes are logical namespaces, not authentication or authorization. Validate identifiers in the application and authorize access before each operation. Avoid delimiter and Redis-glob characters in untrusted scope components. Do not expose raw storage APIs or caller-controlled SQL fragments directly to users.
+
+The configuration-driven facade does not implement client-side encryption or automatically enforce TTL, quota, or PII options. Policy/content-processing helpers are separate components. Protect stored content through application controls, filesystem/database permissions, network restrictions, and backing-service configuration.
+
+Redis collection TTL applies to shared hashes/indexes, and audit-stream TTL is refreshed on later events. These mechanisms do not provide immutable per-record retention, tamper evidence, or compliance certification. Redis checkpoint helpers use an environment/agent namespace rather than full user/session isolation.
+
+TLS certificate verification is enabled on the repaired Redis paths. Do not disable it. Supply credentials through approved external configuration, prefer managed identity where supported, and manage credential/token lifecycle explicitly; automatic token renewal is not implemented by this package.
+
+File records use encoded names and atomic individual replacements, not transactions across all records/indexes. Account for Windows case-insensitivity, filename length, and concurrent writers. Back up stores and follow [migration guidance](LEGACY_API.md) before upgrading.
+
+Unit tests use local stores, fakeredis, and mocked identity services. They are not a security audit or live Azure validation. Report vulnerabilities through MSRC using the instructions above, not public GitHub issues.

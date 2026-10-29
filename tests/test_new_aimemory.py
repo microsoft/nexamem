@@ -17,27 +17,21 @@ class TestAIMemory:
 
     def test_init_with_memory_config(self):
         """Test initialization with memory storage config."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
         assert ai_memory.config == config
         assert ai_memory._storage is not None
 
     def test_init_with_custom_container(self):
         """Test initialization with custom DI container."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         container = DIContainer()
         ai_memory = AIMemory(config, container)
         assert ai_memory.container == container
 
     def test_store_memory(self):
         """Test storing memories."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store without explicit ID
@@ -52,9 +46,7 @@ class TestAIMemory:
 
     def test_retrieve_memory(self):
         """Test retrieving memories."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store a memory
@@ -75,9 +67,7 @@ class TestAIMemory:
 
     def test_delete_memory(self):
         """Test deleting memories."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store a memory
@@ -97,9 +87,7 @@ class TestAIMemory:
 
     def test_list_memories(self):
         """Test listing memories."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store multiple memories
@@ -120,9 +108,7 @@ class TestAIMemory:
 
     def test_search_memories(self):
         """Test searching memories."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store memories
@@ -142,9 +128,7 @@ class TestAIMemory:
 
     def test_get_statistics(self):
         """Test getting statistics."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store some memories
@@ -157,9 +141,7 @@ class TestAIMemory:
 
     def test_clear_scope(self):
         """Test clearing a scope."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AIMemory(config)
 
         # Store memories in different scopes
@@ -185,24 +167,18 @@ class TestAsyncAIMemory:
 
     async def test_init_with_memory_config(self):
         """Test initialization with memory storage config."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
         assert ai_memory.config == config
         assert ai_memory._storage is not None
 
     async def test_store_memory(self):
         """Test storing memories asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store without explicit ID
-        memory_id = await ai_memory.store(
-            "Hello world", metadata={"type": "greeting"}
-        )
+        memory_id = await ai_memory.store("Hello world", metadata={"type": "greeting"})
         assert memory_id is not None
         assert isinstance(memory_id, str)
 
@@ -213,9 +189,7 @@ class TestAsyncAIMemory:
 
     async def test_retrieve_memory(self):
         """Test retrieving memories asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store a memory
@@ -232,9 +206,7 @@ class TestAsyncAIMemory:
 
     async def test_delete_memory(self):
         """Test deleting memories asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store a memory
@@ -250,9 +222,7 @@ class TestAsyncAIMemory:
 
     async def test_list_memories(self):
         """Test listing memories asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store multiple memories
@@ -267,9 +237,7 @@ class TestAsyncAIMemory:
 
     async def test_search_memories(self):
         """Test searching memories asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store memories
@@ -283,9 +251,7 @@ class TestAsyncAIMemory:
 
     async def test_get_statistics(self):
         """Test getting statistics asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store some memories
@@ -298,9 +264,7 @@ class TestAsyncAIMemory:
 
     async def test_clear_scope(self):
         """Test clearing a scope asynchronously."""
-        config = AIMemoryConfig(
-            default_scope="test", storage=StorageConfig.memory()
-        )
+        config = AIMemoryConfig(default_scope="test", storage=StorageConfig.memory())
         ai_memory = AsyncAIMemory(config)
 
         # Store memories in different scopes

@@ -1,182 +1,51 @@
-# Legacy ChatHistory API (Deprecated)
+# Legacy APIs and Migration
 
-> ⚠️ **Deprecation Notice**: The legacy ChatHistory API is deprecated and will be removed in a future version. Please migrate to the new [AIMemory API](README.md#quick-start---aimemory-recommended) for all new projects.
+## Retained APIs
 
-## Migration Guide
+The top-level `AIMemory` and `AsyncAIMemory` names refer to the configuration-driven API. Existing Redis-oriented classes remain available as `LegacyAIMemory` and `LegacyAsyncAIMemory`, or from `nexamem.aimemory`. This stabilization does not remove them.
 
-### Quick Migration Example
+`initialize`, `get_config`, and `ChatHistory` remain supported compatibility entry points. Initialization now loads the actual legacy configuration implementation instead of a silent no-op fallback.
 
-**Before (Legacy API):**
 ```python
-from nexamem import initialize, ChatHistory
+from nexamem import ChatHistory, initialize
 
-# Old initialization pattern
-initialize({
-    "history_storage": "redis",
-    "redis_config": {
-        "azure_hostname": "your-cache.redis.cache.windows.net",
-        "azure_access_key": "your_primary_access_key",
-        "ssl": True
-    }
-})
-
+initialize({"history_storage": "memory"})
 history = ChatHistory()
-history.add_message('user', 'Hello!')
-history.add_message('assistant', 'Hi! How can I help you?')
-messages = history.get_history()
+history.add_user_message("Hello")
+history.add_assistant_message("How can I help?")
+assert len(history.get_history()) == 2
 ```
 
-**After (New AIMemory API):**
-```python
-from nexamem import AIMemory, AIMemoryConfig, StorageConfig, MemoryScope
+Legacy initialization is process-global. Configure it once per application and isolate tests that reset configuration. `ChatHistory` supports memory, file, SQLite, and Redis storage through that configuration. Caller-supplied SQL filter fragments must never be treated as safe for untrusted input.
 
-# New configuration pattern
-config = AIMemoryConfig(
-    default_scope="chat_session",
-    storage=StorageConfig.azure_redis(
-        hostname="your-cache.redis.cache.windows.net",
-        access_key="your_primary_access_key",
-        ssl=True
-    ),
-    channels_yaml="channels.yaml"  # Optional: YAML channel configuration
-)
+The new facades' channel methods are compatibility conveniences, not a guarantee of the legacy Redis policy behavior. See [architecture](NEW_ARCHITECTURE.md) for unenforced options and retention limitations.
 
-memory = AIMemory(config)
+## Python and Dependencies
 
-scope = MemoryScope(
-    agent_id="chat_agent",
-    user_id="user_123",
-    session_id="session_abc"
-)
+The next release requires Python 3.11 or newer and upgrades dependency ranges. Applications using 3.8, 3.9, or 3.10 must upgrade their runtime before adopting it. Legacy import names are retained; runtime-version support is not.
 
-# Write messages
-memory.write(scope=scope, channel="conversation", content="Hello!")
-memory.write(scope=scope, channel="conversation", content="Hi! How can I help you?")
+## File Storage Migration
 
-# Read messages
-messages, metadata = memory.read(scope=scope, channel="conversation")
-```
+Memory IDs and scope names are now encoded before use as filenames. Ordinary safe filenames are unchanged. Identifiers containing colons, percent signs, path separators, or Windows device names can map to different filenames than older versions.
 
-## Key Differences
+Back up existing stores before upgrading. Export records with the old version in a separate environment, then re-store them with the new version into a new directory, preserving logical IDs, metadata, scope, and any timestamps your migration requires. Do not blindly rename only memory files: scope indexes and audit references may also need rebuilding. There is no automatic on-disk migration utility, and re-storing through public CRUD generates new timestamps.
 
-| Feature | Legacy API | New API |
-|---------|------------|---------|
-| **Configuration** | `initialize()` function | `AIMemoryConfig` class |
-| **Storage Setup** | Dict-based config | Type-safe Pydantic models |
-| **Message Storage** | `add_message()` | `write()` with channels |
-| **Message Retrieval** | `get_history()` | `read()` with metadata |
-| **Session Management** | Built-in session context | Explicit `MemoryScope` |
-| **Async Support** | Limited | Full async/await support |
-| **Channel Management** | Single conversation | Multiple channels with YAML config |
-| **Policy Enforcement** | Basic | Advanced (TTL, PII, quotas) |
+Windows paths are case-insensitive by default; avoid IDs that differ only by case. Respect filesystem filename limits. Atomic replacement of one record does not make concurrent multi-file updates transactional.
 
-## Migration Benefits
+## Channel Scope Migration
 
-The new AIMemory API provides:
+New-facade compatibility channel keys now include `env`. Older records used `agent:user:session:channel` and could mix environments. New readers intentionally do not fall back to those ambiguous keys.
 
-- **Better Performance**: Async-first design with connection pooling
-- **Enhanced Security**: PII detection, encryption, and policy enforcement
-- **Flexible Channels**: YAML-configured channels with TTL and quota management
-- **Better Testing**: Dependency injection and configurable storage backends
-- **Enterprise Features**: Audit logging, metrics, and compliance-ready design
+Before upgrading an existing store, export and classify affected records using trusted application context, then re-store them into the correct environment scopes. Do not infer the original environment from an ambiguous old key alone. The metadata `scope_dict` may help, but should be verified before trusting it for migration. No automatic channel-key migration is supplied.
 
-## Legacy API Documentation
+Keep delimiter-free, application-validated scope identifiers and channel names. Prefix construction is a naming scheme, not authorization or protection against adversarial delimiter/glob inputs.
 
-For applications that cannot migrate immediately, the legacy API remains available:
+## Behavior Repairs
 
-### Enhanced Message Properties
+- Overwriting memory preserves creation time and removes stale scope-index membership.
+- UTF-8 bytes passed to the new facade's `write()` are decoded as text; invalid UTF-8 raises rather than storing a Python bytes representation.
+- Failed JSON serialization no longer overwrites an existing file record.
+- Redis generic-memory overwrite operations update scope membership; collection erasure removes only the requested user's/session's message fields and indexes.
+- Legacy Redis queries skip non-string index keys, and sync audit reads use the Redis stream range API correctly.
 
-All messages support these additional properties:
-
-- **`agent_id`** - String identifier for the agent (default: empty string)
-- **`user_id`** - String identifier for the user (default: empty string)  
-- **`session_id`** - Auto-generated UUID for the session (automatically created if not provided)
-- **`env`** - Environment identifier (default: "prod")
-- **`timestamp`** - ISO datetime string of when the message was recorded (auto-generated)
-- **`tokens`** - Number of tokens used by the LLM (default: 0)
-- **`data`** - JSON string for additional custom data (default: empty string)
-
-### Basic Usage
-
-```python
-from nexamem import initialize, ChatHistory
-
-# Initialize with your preferred storage
-initialize({
-    "history_storage": "memory",  # or "file", "sqlite", "redis"
-    "debug": True
-})
-
-history = ChatHistory()
-
-# Simple usage (backward compatible)
-history.add_message('user', 'Hello!')
-history.add_message('assistant', 'Hi! How can I help you?')
-
-# Enhanced usage with new properties
-history.add_message(
-    'assistant', 
-    'Your portfolio is performing well.',
-    agent_id="portfolio_agent",
-    user_id="customer_123",
-    tokens=15,
-    data='{"confidence": 0.92, "risk_level": "moderate"}'
-)
-
-# View all messages with enhanced properties
-messages = history.get_history()
-for msg in messages:
-    print(f"Role: {msg['role']}")
-    print(f"Content: {msg['content']}")
-    print(f"Agent: {msg['agent_id']}")
-    print(f"Tokens: {msg['tokens']}")
-    print(f"Timestamp: {msg['timestamp']}")
-```
-
-### Azure Redis with Legacy API
-
-```python
-from nexamem import initialize, ChatHistory
-
-# Azure Redis with access key
-initialize({
-    "history_storage": "redis",
-    "redis_config": {
-        "azure_hostname": "your-cache.redis.cache.windows.net",
-        "azure_access_key": "your_primary_access_key",
-        "ssl": True
-    }
-})
-
-history = ChatHistory()
-
-# Set session context for organized conversation tracking
-history.set_session_context(
-    agent_id="customer_support",
-    user_id="customer_12345",
-    env="prod"
-)
-
-# Add messages with automatic token counting and metadata
-history.add_user_message("I need help with my account", tokens=8)
-history.add_assistant_message(
-    "I'd be happy to help! What specific issue are you experiencing?", 
-    tokens=15,
-    data='{"intent": "support_request", "confidence": 0.95}'
-)
-
-# Retrieve conversation history with all enhanced properties
-messages = history.get_history()
-print(f"Retrieved {len(messages)} messages from Azure Redis")
-
-# Advanced querying: find all messages for this user across sessions
-user_messages = history.query_redis("*customer_12345*", limit=100)
-print(f"Found {len(user_messages)} total messages for this customer")
-```
-
-## Support
-
-- **New Projects**: Use the [AIMemory API](README.md#quick-start---aimemory-recommended)
-- **Migration Questions**: See the [New Architecture Guide](NEW_ARCHITECTURE.md)
-- **Legacy API Issues**: The legacy API will receive critical bug fixes only
-- **Timeline**: Legacy API deprecation timeline will be announced in future releases
+Test application-specific ordering, storage formats, and retention assumptions on a copy of production data before rollout.

@@ -1,16 +1,92 @@
 """Tests for configuration models."""
 
+import os
+
 import pytest
 from pydantic import ValidationError
 
 from nexamem.config.aimemory import AIMemoryConfig
 from nexamem.config.storage import (
+    AzureAuthMethod,
     AzureRedisConfig,
     FileConfig,
     MemoryConfig,
     SQLiteConfig,
     StorageConfig,
 )
+
+
+@pytest.fixture
+def clean_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in list(os.environ):
+        if name.startswith(("AZURE_", "NEXAMEM_")):
+            monkeypatch.delenv(name)
+
+
+@pytest.mark.usefixtures("clean_storage_environment")
+@pytest.mark.parametrize(
+    "storage_type,path_variable",
+    [("memory", None), ("file", "NEXAMEM_FILE_PATH"), ("sqlite", "NEXAMEM_SQLITE_PATH")],
+)
+def test_storage_environment(
+    monkeypatch: pytest.MonkeyPatch, storage_type: str, path_variable: str | None
+) -> None:
+    monkeypatch.setenv("NEXAMEM_STORAGE_TYPE", storage_type)
+    if path_variable:
+        with pytest.raises(ValueError):
+            StorageConfig.from_env()
+        monkeypatch.setenv(path_variable, "unit-data")
+    assert StorageConfig.from_env().type.value == storage_type
+
+
+@pytest.mark.usefixtures("clean_storage_environment")
+def test_redis_environment_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="HOSTNAME"):
+        AzureRedisConfig.from_env()
+    monkeypatch.setenv("AZURE_REDIS_HOSTNAME", "unit.redis.cache.windows.net")
+    with pytest.raises(ValueError, match="authentication"):
+        AzureRedisConfig.from_env()
+
+
+@pytest.mark.usefixtures("clean_storage_environment")
+@pytest.mark.parametrize(
+    "auth_method,environment",
+    [
+        (AzureAuthMethod.ACCESS_KEY, {"AZURE_REDIS_ACCESS_KEY": "unit-test-only"}),
+        (AzureAuthMethod.ENTRA_ID, {"AZURE_CLIENT_ID": "unit-client"}),
+        (
+            AzureAuthMethod.KEYVAULT,
+            {
+                "AZURE_KEYVAULT_URL": "https://unit.vault.azure.net",
+                "AZURE_REDIS_SECRET_NAME": "unit-secret",
+            },
+        ),
+    ],
+)
+def test_redis_environment_authentication(
+    monkeypatch: pytest.MonkeyPatch, auth_method: AzureAuthMethod, environment: dict
+) -> None:
+    monkeypatch.setenv("AZURE_REDIS_HOSTNAME", "unit.redis.cache.windows.net")
+    monkeypatch.setenv("NEXAMEM_STORAGE_TYPE", "azure_redis")
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    config = StorageConfig.from_env()
+    assert config.config.auth_method == auth_method
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"auth_method": AzureAuthMethod.ENTRA_ID},
+        {"auth_method": AzureAuthMethod.KEYVAULT},
+        {"hostname": "not-an-azure-host", "access_key": "test"},
+    ],
+)
+def test_redis_auth_validation(options: dict) -> None:
+    values = {"hostname": "unit.redis.cache.windows.net", **options}
+    with pytest.raises(ValidationError):
+        AzureRedisConfig(**values)
 
 
 class TestStorageConfigs:
@@ -75,9 +151,7 @@ class TestStorageConfigs:
 
     def test_azure_redis_config_defaults(self):
         """Test Azure Redis configuration defaults."""
-        config = AzureRedisConfig(
-            hostname="test.redis.cache.windows.net", access_key="test-key"
-        )
+        config = AzureRedisConfig(hostname="test.redis.cache.windows.net", access_key="test-key")
         assert config.port == 6380
         assert config.db == 0
         assert config.ssl is True
@@ -152,9 +226,7 @@ class TestAIMemoryConfig:
 
         # Test with Azure Redis storage
         redis_storage = StorageConfig.azure_redis(
-            AzureRedisConfig(
-                hostname="test.redis.cache.windows.net", access_key="test-key"
-            )
+            AzureRedisConfig(hostname="test.redis.cache.windows.net", access_key="test-key")
         )
         config = AIMemoryConfig(default_scope="redis_test", storage=redis_storage)
         assert config.storage.type == "azure_redis"
